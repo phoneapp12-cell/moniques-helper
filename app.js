@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.1.2';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1094,7 +1094,23 @@ function remindersCard() {
 const CALM = [ "Take a slow breath. You’re doing just fine.", "One thing at a time is plenty.", "Let your shoulders drop a little.", "There’s no rush today.", "Be gentle with yourself.", "Small steps still count.", "You’ve handled a lot, and you’re still here.", "Breathe in slowly, breathe out slower.", "It’s okay to take a moment.", "Today can be simple.", "Rest is part of the plan.", "You don’t have to do it all at once.", "Notice one good thing around you.", "Let this moment be enough.", "A calm mind makes everything lighter.", "You are allowed to go at your own pace.", "Unclench your jaw and soften your hands.", "Whatever today brings, you can meet it gently.", "Pause, breathe, carry on.", "Kindness to yourself is never wasted.", "Let the little things stay little.", "This moment is yours.", "A cup of tea and a quiet minute can work wonders.", "You’ve got this, one step at a time.", "Slow down; the day will wait.", "Peace can start with a single breath.", "Let go of what you can’t control.", "You are more than your to-do list.", "Calm is always just a breath away.", "It’s okay not to have every answer today.", "Sunlight, fresh air and a deep breath.", "Be proud of how far you’ve come.", "Go easy. You’re doing better than you think.", "Let your thoughts settle like leaves on water.", "Quiet moments are good for the heart.", "Take care of you today.", "You can begin again at any moment.", "Gentle progress is still progress.", "Let today unfold softly.", "Rest when you need to; it’s not a race.", "Look up for a moment and notice the sky.", "Breathe in calm, breathe out worry.", "You deserve a little peace today.", "Things don’t have to be perfect to be good.", "Your best is enough.", "Soft and steady wins the day.", "Listen to what your body needs.", "Every day is a fresh page.", "It’s okay to say no and rest.", "A slow morning is a gift.", "Find one small thing to smile about.", "You’re right where you need to be.", "Let your breath be slow and easy.", "A little calm goes a long way.", "Give yourself the patience you give others.", "Put your feet up when you can.", "You’re stronger than you feel today.", "Take it easy and keep it simple.", "Breathe deeply. Let it all slow down.", "Quiet the noise and listen to yourself.", "There’s always time for a deep breath.", "Not everything needs doing today.", "You’re allowed to feel how you feel.", "Let your mind wander somewhere peaceful.", "Tiny moments of rest add up.", "Gentle days are good days too.", "Focus on what’s in front of you.", "Smile softly; it helps more than you think.", "Trust yourself. You know more than you think.", "Settle in, breathe out, relax your face.", "Make room for a little joy today.", "Let yesterday go and greet today kindly.", "You don’t need to carry everything alone.", "Some fresh air might be just the thing.", "Calm thoughts, kind words, easy steps.", "Your pace is the right pace.", "Pause and feel your feet on the ground.", "Let the day be lighter than you expected.", "You are doing enough.", "Close your eyes for three slow breaths.", "A tidy mind starts with a quiet moment.", "Water, rest, and a little kindness.", "Hold onto the good bits of today.", "You can only do today once, so enjoy a bit of it.", "It’s fine to take the long way round.", "Let the busy fade into the background.", "Everything feels easier after a good breath.", "Treat yourself like you’d treat a good friend.", "Soft music and a slow minute can reset the day.", "You’re making it work, and that’s worth noticing.", "Let worry wait outside for a while.", "Steady breathing, steady heart.", "It’s a good day to be kind to yourself.", "Peaceful thoughts make for a peaceful day.", "Give yourself credit for the little wins.", "Let the quiet in.", "One calm minute can change the whole hour.", "Stretch, breathe, and start again.", "You are loved and you are enough.", "Nothing needs to be rushed right now.", "Take a moment to just be.", "Good things can come slowly.", "Breathe like the waves: in, and out.", "Let your heart rest easy.", "Be still for a moment. It’s allowed.", "Whatever you get done today is enough.", "The world can wait while you breathe.", "A gentle day is a good day.", "Feel the calm settle in, little by little." ];
 const CALM_KEY = 'moniquesHelper.calm.v1';
 function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
-const greetText = now => 'Good ' + greetWord(now) + ', Monique';
+const isBirthday = (now = new Date()) => now.getMonth() === 9 && now.getDate() === 3; // 3 October, every year
+const BDAY_LINES = [
+  'Wishing you a lovely, relaxing day. You deserve it.',
+  'Hope today is full of smiles, treats and people who love you.',
+  'Have a wonderful day. Enjoy every little bit of it.',
+  'Sending you warm wishes and a big happy birthday hug.',
+  'May your day be as kind to you as you are to everyone else.',
+  'Put your feet up, have some cake, and enjoy your day.'
+];
+let bdayNow = '';
+const greetText = now => isBirthday(now) ? 'Happy birthday, Monique! 🎂' : 'Good ' + greetWord(now) + ', Monique';
+function lineNow() {
+  if (!isBirthday()) return calmNow || calmNext();
+  if (!bdayNow) bdayNow = BDAY_LINES[Math.floor(Math.random() * BDAY_LINES.length)];
+  return bdayNow;
+}
+const greetKey = (now = new Date()) => (isBirthday(now) ? 'bday' : '') + greetWord(now);
 let calmNow = '';
 function calmShuffle(avoid) {
   const idx = CALM.map((_, i) => i);
@@ -1115,21 +1131,22 @@ function calmNext() {
   return calmNow;
 }
 function greetCard() {
-  if (!calmNow) calmNext();
-  return `<div class="greet" id="greet"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(calmNow)}</div></div>`;
+  return `<div class="greet" id="greet"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(lineNow())}</div></div>`;
 }
-let greetBand = greetWord();
-setInterval(() => { // the app left open across 5am, 12pm or 5pm
-  const b = greetWord(); if (b === greetBand) return; greetBand = b;
-  const el = document.getElementById('greethi'); if (el) el.textContent = greetText();
+let greetBand = greetKey();
+function greetPaint() {
+  const a = document.getElementById('greethi'), c = document.getElementById('greetcalm');
+  if (a) a.textContent = greetText(); if (c) c.textContent = lineNow();
+}
+setInterval(() => { // the app left open across 5am, 12pm, 5pm or midnight into/out of her birthday
+  const b = greetKey(); if (b === greetBand) return; greetBand = b; greetPaint();
 }, 30000);
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
   if (hiddenAt && Date.now() - hiddenAt > 2000) { // came back to the app: a new phrase
-    calmNext(); greetBand = greetWord();
-    const a = document.getElementById('greethi'), c = document.getElementById('greetcalm');
-    if (a) a.textContent = greetText(); if (c) c.textContent = calmNow;
+    if (isBirthday()) bdayNow = ''; else calmNext();
+    greetBand = greetKey(); greetPaint();
   }
 });
 

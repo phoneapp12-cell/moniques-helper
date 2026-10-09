@@ -1,5 +1,5 @@
 /* Monique's Helper service worker: keeps the app working offline. No push, no tracking, nothing sent anywhere. */
-const VERSION = '1.1.1';
+const VERSION = '1.1.2';
 const CACHE = 'moniques-helper-' + VERSION;
 const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
 self.addEventListener('install', e => {
