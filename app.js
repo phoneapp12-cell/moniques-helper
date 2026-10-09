@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.0.2';
+const APP_VERSION = '1.1.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -30,6 +30,7 @@ const P = {
   tv: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M9 2l3 4 3-4"/>',
   umbrella: '<path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v7a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   zap: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'
 };
@@ -38,14 +39,16 @@ const I = (n, a = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" 
 
 /* ---------- data (this phone only) ---------- */
 let S = null;
-const blank = () => ({ version: 1, bills: [], loans: [], budgets: [], settings: {} });
+const blank = () => ({ version: 1, bills: [], loans: [], budgets: [], appts: [], settings: {} });
 function normalise(d) {
   d = d && typeof d === 'object' ? d : {};
   if (!Array.isArray(d.bills)) d.bills = [];
   d.bills = d.bills.filter(b => b && typeof b === 'object' && b.id);
   d.loans = normLoans(d.loans);
   d.budgets = normBudgets(d.budgets);
-  d.settings = d.settings && typeof d.settings === 'object' ? { payday: d.settings.payday || '' } : {};
+  d.appts = normAppts(d.appts);
+  const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
+  d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [] };
   d.version = 1;
   return d;
 }
@@ -836,13 +839,13 @@ async function installApp() {
 
 /* ================= BACKUP ================= */
 function Backup() {
-  const n = S.bills.length + S.loans.length + S.budgets.length;
-  return header('Backup', 'Keep a copy of your information') + installCard() +
+  const n = S.bills.length + S.loans.length + S.budgets.length + S.appts.length;
+  return header('Backup', 'Keep a copy of your information') + installCard() + remindersCard() +
     `<div class="card"><p style="margin:0 0 10px">Everything you add is saved on this phone only. Save a backup file now and then, so you can get it back on a new phone.</p>
       <div class="btns"><button class="btn primary" id="exportbtn" onclick="exportData()">${I('download')} Save a backup file</button>
       <button class="btn" onclick="$('#importfile').click()">${I('share')} Restore from a file</button></div>
       <input type="file" id="importfile" accept="application/json,.json" hidden onchange="importData(this)"></div>
-    <div class="foot">${plural(S.bills.length, 'bill')}, ${plural(S.loans.length, 'loan')} and ${plural(S.budgets.length, 'budget')} on this phone.${n ? '' : ' Nothing added yet.'}<br>Monique’s Helper ${APP_VERSION}</div>`;
+    <div class="foot">${plural(S.bills.length, 'bill')}, ${plural(S.loans.length, 'loan')}, ${plural(S.budgets.length, 'budget')} and ${plural(S.appts.length, 'appointment')} on this phone.${n ? '' : ' Nothing added yet.'}<br>Monique’s Helper ${APP_VERSION}</div>`;
 }
 function exportData() {
   const blob = new Blob([JSON.stringify({ app: 'moniques-helper', exportedAt: new Date().toISOString(), data: S }, null, 1)], { type: 'application/json' });
@@ -866,16 +869,234 @@ function importData(inp) {
   r.readAsText(f);
 }
 
+/* ================= CALENDAR & APPOINTMENTS (1.1.0) =================
+   Appointments live on this phone only, with the rest of her information. "Add to phone calendar" makes a
+   small .ics file on the phone; nothing is sent anywhere. Reminders are shown inside the app. */
+const APPT_REPEATS = [['none', 'Doesn’t repeat'], ['weekly', 'Weekly'], ['fortnightly', 'Fortnightly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']];
+const APPT_REMIND = [['', 'No reminder'], ['0', 'At the time'], ['15', '15 minutes before'], ['30', '30 minutes before'], ['60', '1 hour before'], ['120', '2 hours before'], ['1440', '1 day before'], ['2880', '2 days before'], ['10080', '1 week before']];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const timeOk = t => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(t || ''));
+function normAppts(list) {
+  return (Array.isArray(list) ? list : []).filter(a => a && typeof a === 'object' && a.id && parseD(a.date)).map(a => ({
+    id: String(a.id), title: String(a.title || 'Appointment').slice(0, 80), date: a.date, start: timeOk(a.start) ? a.start : '', end: timeOk(a.end) ? a.end : '',
+    location: String(a.location || '').slice(0, 120), notes: String(a.notes || '').slice(0, 1000),
+    repeat: APPT_REPEATS.some(r => r[0] === a.repeat) ? a.repeat : 'none', remind: APPT_REMIND.some(r => r[0] === String(a.remind == null ? '' : a.remind)) ? String(a.remind == null ? '' : a.remind) : '',
+    skips: Array.isArray(a.skips) ? a.skips.filter(d => parseD(d)) : []
+  }));
+}
+const getAppt = id => S.appts.find(a => a.id === id);
+const seriesOf = a => ({ start: a.date, repeat: a.repeat, skips: a.skips });
+// Every appointment (repeats expanded) between two ISO dates, inclusive, sorted by date and time
+function apptsIn(fromIso, toIso) {
+  const out = [];
+  S.appts.forEach(a => MH.repeatDates(seriesOf(a), parseD(fromIso), parseD(toIso)).forEach(o => out.push({ a, date: o.date })));
+  return out.sort((x, y) => x.date.localeCompare(y.date) || (x.a.start || '').localeCompare(y.a.start || '') || x.a.title.localeCompare(y.a.title));
+}
+function nextOcc(a, fromIso) { // the first date of this appointment on or after fromIso
+  const r = MH.repeatDates(seriesOf(a), parseD(fromIso), parseD(addDays(fromIso, 400)));
+  return r.length ? r[0].date : null;
+}
+function lastOcc(a, beforeIso) {
+  if (a.repeat === 'none') return a.date < beforeIso && !a.skips.includes(a.date) ? a.date : null;
+  const r = MH.repeatDates(seriesOf(a), parseD(addDays(beforeIso, -400)), parseD(addDays(beforeIso, -1)));
+  return r.length ? r[r.length - 1].date : null;
+}
+function time12(t) { if (!timeOk(t)) return ''; let [h, m] = t.split(':').map(Number); const ap = h < 12 ? 'am' : 'pm'; h = h % 12 || 12; return h + (m ? ':' + String(m).padStart(2, '0') : '') + ap; }
+const apptTimes = a => a.start ? time12(a.start) + (a.end ? '–' + time12(a.end) : '') : 'All day';
+const repeatWord = r => (APPT_REPEATS.find(x => x[0] === r) || [, ''])[1];
+const occStart = (a, date) => { const [y, mo, d] = date.split('-').map(Number); const [h, m] = (a.start || '09:00').split(':').map(Number); return new Date(y, mo - 1, d, a.start ? h : 9, a.start ? m : 0); };
+function dayWord(date) { const d = daysLeft(date); return d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : d === -1 ? 'Yesterday' : fmtW(date); }
+function apptRow(o, showDate = true) {
+  const a = o.a;
+  const sub = [showDate ? dayWord(o.date) : '', apptTimes(a), a.location, a.repeat !== 'none' ? repeatWord(a.repeat) : ''].filter(Boolean).map(esc).join(' · ');
+  return `<button class="row" onclick="apptForm('${a.id}','${o.date}')"><div class="ic appt">${I('cal')}</div><div class="tx"><div class="t">${esc(a.title)}</div><div class="s">${sub}</div></div>${I('right')}</button>`;
+}
+// ---- month view ----
+let calMonth = null, calDay = null, pastOpen = false;
+function calMonthStart() { if (!calMonth) calMonth = todayISO().slice(0, 7) + '-01'; return calMonth; }
+async function calShift(n) { calMonth = addMonths(calMonthStart(), n, 1); calDay = null; render(); }
+async function calToday() { calMonth = null; calDay = todayISO(); render(); }
+async function calPick(iso) { calDay = calDay === iso ? null : iso; render(); }
+function calGrid() {
+  const m0 = calMonthStart(), y = +m0.slice(0, 4), m = +m0.slice(5, 7) - 1;
+  const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const lead = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7; // weeks start on Monday
+  const last = m0.slice(0, 8) + String(days).padStart(2, '0');
+  const ap = {}; apptsIn(m0, last).forEach(o => { ap[o.date] = (ap[o.date] || 0) + 1; });
+  const bl = {}; S.bills.forEach(b => MH.billDates(b, parseD(m0), parseD(last)).forEach(d => { bl[d] = true; }));
+  const today = todayISO();
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div class="cday blank"></div>';
+  for (let d = 1; d <= days; d++) {
+    const iso = m0.slice(0, 8) + String(d).padStart(2, '0');
+    const cls = ['cday', iso === today ? 'today' : '', iso === calDay ? 'sel' : '', iso < today ? 'past' : ''].filter(Boolean).join(' ');
+    const dots = (ap[iso] ? '<i class="dot a"></i>' : '') + (bl[iso] ? '<i class="dot b"></i>' : '');
+    const lab = fmtLong(iso) + (ap[iso] ? ', ' + plural(ap[iso], 'appointment') : '') + (bl[iso] ? ', bill due' : '');
+    cells += `<button type="button" class="${cls}" data-d="${iso}" aria-label="${esc(lab)}" onclick="calPick('${iso}')"><span>${d}</span><b>${dots}</b></button>`;
+  }
+  return `<div class="card calcard"><div class="calhead"><button class="iconbtn" aria-label="Previous month" onclick="calShift(-1)">${I('left')}</button>
+    <div class="calttl" id="calttl">${MONTHS[m]} ${y}</div><button class="iconbtn" aria-label="Next month" onclick="calShift(1)">${I('right')}</button></div>
+    <div class="cgrid cwd">${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(w => `<div>${w}</div>`).join('')}</div>
+    <div class="cgrid" id="calgrid">${cells}</div>
+    <div class="calkey"><span><i class="dot a"></i> Appointment</span><span><i class="dot b"></i> Bill due</span>${m0 !== today.slice(0, 8) + '01' ? `<button class="btn small" onclick="calToday()">Today</button>` : ''}</div></div>`;
+}
+function calDayPanel() {
+  if (!calDay) return '';
+  const list = apptsIn(calDay, calDay);
+  const bills = S.bills.filter(b => MH.billDates(b, parseD(calDay), parseD(calDay)).length);
+  return `<div class="sec">${esc(fmtLong(calDay))}<button onclick="apptForm(null,'${calDay}')">+ Add</button></div>
+    <div class="list" id="calday">${list.map(o => apptRow(o, false)).join('')}${bills.map(b => `<button class="row" onclick="billForm('${b.id}')"><div class="ic bill">${I(billIcon(b.name))}</div><div class="tx"><div class="t">${esc(b.name)}</div><div class="s">Bill due${b.amount ? ' · ' + money(b.amount) : ''}</div></div>${I('right')}</button>`).join('')}
+    ${!list.length && !bills.length ? `<div class="row"><div class="tx"><div class="s">Nothing on this day.</div></div><button class="btn small primary" onclick="apptForm(null,'${calDay}')">Add appointment</button></div>` : ''}</div>`;
+}
+function Calendar() {
+  const today = todayISO();
+  const up = apptsIn(today, addDays(today, 365));
+  const seen = new Set(), upcoming = up.filter(o => { if (o.a.repeat === 'none') return true; const n = seen.has(o.a.id) ? false : (seen.add(o.a.id), true); return n; });
+  const past = S.appts.filter(a => a.repeat === 'none' && a.date < today).map(a => ({ a, date: a.date })).sort((x, y) => y.date.localeCompare(x.date) || (y.a.start || '').localeCompare(x.a.start || ''));
+  return header('Calendar', 'Your appointments', addBtn('Add appointment', `apptForm(null,'${calDay || today}')`)) + calGrid() + calDayPanel() +
+    `<div class="sec">Coming up</div>` +
+    (upcoming.length ? `<div class="list" id="apptlist">${upcoming.slice(0, 40).map(o => apptRow(o)).join('')}</div>` + (upcoming.length > 40 ? `<p class="muted">And ${upcoming.length - 40} more.</p>` : '')
+      : empty('No appointments yet', 'Add doctor, dentist, school or anything else. Repeats are fine too.', 'Add appointment', `apptForm(null,'${today}')`)) +
+    (past.length ? `<details class="pastbox" ${pastOpen ? 'open' : ''} ontoggle="pastOpen=this.open"><summary>Past appointments (${past.length})</summary><div class="list" id="pastlist">${past.slice(0, 60).map(o => apptRow(o)).join('')}</div></details>` : '') +
+    `<div class="foot">Repeating appointments show their next date here. ${savedWhere()}</div>`;
+}
+function apptForm(id, date) {
+  const a = id ? getAppt(id) : { title: '', date: date || todayISO(), start: '', end: '', location: '', notes: '', repeat: 'none', remind: '' };
+  if (!a) return;
+  const occ = id ? (date || a.date) : null;
+  const extra = id ? `<button type="button" class="btn danger" style="flex:0 0 auto" aria-label="Delete appointment" onclick="deleteAppt('${id}','${occ}')">${I('trash')}</button>
+    <button type="button" class="btn" style="flex:0 0 auto" aria-label="Add to phone calendar" title="Add to phone calendar" onclick="icsDownload('${id}','${occ}')">${I('download')}</button>` : '';
+  openSheet(id ? 'Edit appointment' : 'Add an appointment',
+    field('What is it?', inp('title', a.title, 'placeholder="e.g. Doctor, dentist, haircut" required maxlength="80"')) +
+    field(id && a.repeat !== 'none' ? 'First date' : 'Date', inp('date', a.date, 'type="date" required'), id && a.repeat !== 'none' ? 'Changing this moves the whole series.' : '') +
+    `<div class="two">${field('Start time', inp('start', a.start, 'type="time"'), 'Leave empty for all day')}${field('End time', inp('end', a.end, 'type="time"'), 'Optional')}</div>` +
+    field('Where', inp('location', a.location, 'placeholder="Optional" maxlength="120"')) +
+    `<div class="two">${field('Repeats', sel('repeat', APPT_REPEATS, a.repeat))}${field('Reminder', sel('remind', APPT_REMIND, a.remind))}</div>` +
+    field('Notes', area('notes', a.notes, 'Optional')) +
+    (id ? `<p class="muted" style="font-size:0.8125rem;margin:4px 2px 0">${I('download')} adds it to your phone’s own calendar app.</p>` : ''),
+    async v => {
+      if (!v.title) return 'Please say what the appointment is.';
+      if (!parseD(v.date)) return 'Please choose a date.';
+      if (v.end && !v.start) return 'Please add a start time, or clear the end time.';
+      if (v.start && v.end && v.end <= v.start) return 'The end time needs to be after the start time.';
+      const upd = { title: v.title, date: v.date, start: timeOk(v.start) ? v.start : '', end: timeOk(v.end) ? v.end : '', location: v.location || '', notes: v.notes || '', repeat: v.repeat, remind: v.remind || '' };
+      const s = snap();
+      if (id) { if (upd.date !== a.date || upd.repeat !== a.repeat) upd.skips = []; Object.assign(a, upd); }
+      else S.appts.push(Object.assign({ id: uid('appt'), skips: [] }, upd));
+      await save(); render(); toast(id ? 'Appointment updated.' : 'Appointment added.', 'Undo', undoTo(s));
+    }, id ? 'Save' : 'Add', extra);
+  if (!id && date) { const t = document.querySelector('#sf input[name=title]'); if (t) setTimeout(() => t.focus(), 50); }
+}
+function deleteAppt(id, occ) {
+  const a = getAppt(id); if (!a) return;
+  const doIt = async all => {
+    const s = snap();
+    if (all || a.repeat === 'none') S.appts = S.appts.filter(x => x.id !== id); else a.skips = [...new Set(a.skips.concat(occ))];
+    await save(); render(); toast(all || a.repeat === 'none' ? 'Appointment deleted.' : 'Removed ' + fmtW(occ) + ' only.', 'Undo', undoTo(s));
+  };
+  if (a.repeat === 'none') { confirmSheet('Delete this appointment?', esc(a.title) + ', ' + esc(fmtLong(a.date)), 'Delete', () => doIt(true)); return; }
+  openSheet('Delete a repeating appointment', `<p class="muted" style="margin:0 0 6px">${esc(a.title)} repeats ${esc(repeatWord(a.repeat).toLowerCase())}.</p>`, null, '',
+    `<button type="button" class="btn danger" id="delone" onclick="closeSheet().then(()=>deleteApptGo('${id}','${occ}',false))">Only ${esc(fmtW(occ))}</button><button type="button" class="btn danger" id="delall" onclick="closeSheet().then(()=>deleteApptGo('${id}','${occ}',true))">All of them</button>`);
+}
+async function deleteApptGo(id, occ, all) {
+  const a = getAppt(id); if (!a) return;
+  const s = snap();
+  if (all) S.appts = S.appts.filter(x => x.id !== id); else a.skips = [...new Set(a.skips.concat(occ))];
+  await save(); render(); toast(all ? 'Appointment deleted.' : 'Removed ' + fmtW(occ) + ' only.', 'Undo', undoTo(s));
+}
+// ---- .ics file for the phone's own calendar ----
+const icsEsc = s => String(s || '').replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+const icsFold = line => { const out = []; let s = line; while (s.length > 74) { out.push(s.slice(0, 74)); s = ' ' + s.slice(74); } out.push(s); return out.join('\r\n'); };
+function icsText(a, occ) {
+  const d = (occ || a.date).replace(/-/g, ''), t = x => x.replace(':', '') + '00';
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Moniques Helper//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'BEGIN:VEVENT',
+    'UID:' + a.id + (a.repeat === 'none' ? '' : '-' + d) + '@moniques-helper', 'DTSTAMP:' + stamp];
+  if (a.start) {
+    L.push('DTSTART:' + d + 'T' + t(a.start)); // no time zone: the phone treats it as its own local time
+    L.push(a.end ? 'DTEND:' + d + 'T' + t(a.end) : 'DURATION:PT1H');
+  } else { L.push('DTSTART;VALUE=DATE:' + d); L.push('DTEND;VALUE=DATE:' + addDays(occ || a.date, 1).replace(/-/g, '')); }
+  const rr = { weekly: 'FREQ=WEEKLY', fortnightly: 'FREQ=WEEKLY;INTERVAL=2', monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY' }[a.repeat];
+  if (rr) L.push('RRULE:' + rr);
+  L.push('SUMMARY:' + icsEsc(a.title));
+  if (a.location) L.push('LOCATION:' + icsEsc(a.location));
+  if (a.notes) L.push('DESCRIPTION:' + icsEsc(a.notes));
+  if (a.remind !== '') L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(a.title), 'TRIGGER:-PT' + (+a.remind) + 'M', 'END:VALARM');
+  L.push('END:VEVENT', 'END:VCALENDAR');
+  return L.map(icsFold).join('\r\n') + '\r\n';
+}
+function icsDownload(id, occ) {
+  const a = getAppt(id); if (!a) return;
+  const blob = new Blob([icsText(a, a.repeat === 'none' ? a.date : occ)], { type: 'text/calendar;charset=utf-8' });
+  const el = document.createElement('a');
+  el.href = URL.createObjectURL(blob); el.download = (a.title.replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-') || 'appointment') + '.ics';
+  document.body.appendChild(el); el.click(); setTimeout(() => { URL.revokeObjectURL(el.href); el.remove(); }, 1500);
+  toast('Calendar file saved. Open it to add to your phone’s calendar.');
+}
+// ---- reminders: shown inside the app only ----
+function reminderKey(o) { return o.a.id + '|' + o.date; }
+function dueReminders(now = new Date()) {
+  const today = todayISO(now);
+  return apptsIn(addDays(today, -1), addDays(today, 8)).filter(o => {
+    if (o.a.remind === '') return false;
+    const st = occStart(o.a, o.date), from = new Date(st.getTime() - (+o.a.remind) * 60000);
+    const endT = o.a.start ? new Date(st.getTime() + 60 * 60000) : new Date(st.getFullYear(), st.getMonth(), st.getDate(), 23, 59);
+    return now >= from && now <= endT && !(S.settings.seen || []).includes(reminderKey(o));
+  });
+}
+function remindBanner() {
+  const rem = dueReminders(new Date());
+  return `<div id="remindbox" data-k="${esc(rem.map(reminderKey).join())}">` + rem.map(o => `<div class="callout remind" data-k="${esc(reminderKey(o))}">${I('bell')}<div style="flex:1"><b>Reminder: ${esc(o.a.title)}</b><br>${esc(dayWord(o.date))} · ${esc(apptTimes(o.a))}${o.a.location ? ' · ' + esc(o.a.location) : ''}</div><button class="iconbtn" aria-label="Dismiss reminder" onclick="dismissReminder('${esc(reminderKey(o))}')">${I('x')}</button></div>`).join('') + '</div>';
+}
+function todayCard() {
+  const today = todayISO(), now = new Date();
+  const soon = apptsIn(today, addDays(today, 6)).filter(o => !(o.date === today && o.a.start && occStart(o.a, o.date) < new Date(now.getTime() - 60 * 60000)));
+  if (!soon.length) return '';
+  return `<div class="sec">Today and coming up<button onclick="go('#calendar')">Calendar</button></div><div class="list" id="todaylist">${soon.slice(0, 6).map(o => apptRow(o)).join('')}</div>${soon.length > 6 ? `<p class="muted" style="margin:6px 4px 0">And ${soon.length - 6} more this week.</p>` : ''}`;
+}
+async function dismissReminder(k) {
+  S.settings.seen = (S.settings.seen || []).concat(k).slice(-200);
+  await save(); render();
+}
+// Optional phone notifications: only if she turns them on, and only while the app is open.
+let notifiedKeys = new Set();
+function notifyOn() { return !!S.settings.notify && 'Notification' in window && Notification.permission === 'granted'; }
+async function toggleNotify() {
+  if (!('Notification' in window)) { toast('This browser can’t show notifications. Reminders will still show in the app.'); return; }
+  if (S.settings.notify) { S.settings.notify = false; await save(); render(); toast('Notifications off. Reminders still show in the app.'); return; }
+  const p = await Notification.requestPermission();
+  if (p !== 'granted') { toast('Notifications weren’t allowed. Reminders will still show in the app.'); return; }
+  S.settings.notify = true; await save(); render(); toast('Notifications on, while the app is open.');
+}
+async function reminderTick() {
+  const due = dueReminders();
+  const box = document.getElementById('remindbox');
+  if (box && !sheetOpen && box.dataset.k !== due.map(reminderKey).join()) render();
+  if (!notifyOn()) return;
+  for (const o of due) {
+    const k = reminderKey(o); if (notifiedKeys.has(k)) continue; notifiedKeys.add(k);
+    const body = dayWord(o.date) + ' · ' + apptTimes(o.a) + (o.a.location ? ' · ' + o.a.location : '');
+    try { const reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.showNotification(o.a.title, { body, tag: k, icon: 'icons/icon-192.png' }); else new Notification(o.a.title, { body, tag: k }); } catch (e) {}
+  }
+}
+setInterval(reminderTick, 30000);
+function remindersCard() {
+  const supported = 'Notification' in window;
+  return `<div class="card"><div style="font-weight:700;margin-bottom:4px">Appointment reminders</div>
+    <p class="muted" style="margin:0 0 10px;font-size:0.875rem">Reminders show at the top of the app when you open it. You can also let the phone pop up a notification, but only while the app is open. It can’t remind you when the app is closed, so use “Add to phone calendar” for those.</p>
+    ${supported ? `<button class="btn small" id="notifybtn" onclick="toggleNotify()">${notifyOn() ? 'Turn off notifications' : 'Turn on notifications'}</button>` : '<p class="muted" style="margin:0">This browser can’t show notifications.</p>'}</div>`;
+}
+
 /* ================= ROUTER ================= */
-const TABS = [['bills', 'Bills', 'bill'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['backup', 'Backup', 'gear']];
+const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['backup', 'Backup', 'gear']];
 function render() {
   if (!S) return;
   const h = (location.hash || '#bills').slice(1), [r, arg] = h.split('/');
   let page = '';
   try {
-    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : Bills();
+    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = (r === 'bills' || r === '' ? installCard() : '') + page;
+  $('#view').innerHTML = remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
   $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${I(ic)}<span>${l}</span></button>`).join('');
 }

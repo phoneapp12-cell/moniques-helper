@@ -245,6 +245,28 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 .installcard.inapp{border-color:var(--amber);background:var(--amberbg)}
 .installcard a.btn{text-decoration:none}
 .installcard svg.i{width:16px;height:16px;vertical-align:-3px}
+/* 1.1.0 calendar */
+.ic.appt{background:var(--appt-bg);color:var(--appt-fg)}
+.calcard{padding:12px 10px}
+.calhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.calttl{font-weight:750;font-size:1.0625rem}
+.cgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cwd div{text-align:center;font-size:0.6875rem;font-weight:700;color:var(--ink3);padding:4px 0;text-transform:uppercase}
+.cday{aspect-ratio:1/1;border:0;background:none;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font:inherit;font-weight:650;color:var(--ink);cursor:pointer;padding:0}
+.cday.blank{pointer-events:none}
+.cday.past span{color:var(--ink3)}
+.cday.today span{background:var(--brand);color:var(--onbrand);border-radius:999px;min-width:28px;line-height:28px}
+.cday.sel{background:var(--brand2);outline:2px solid var(--brand)}
+.cday b{display:flex;gap:3px;height:6px}
+.dot{display:inline-block;width:6px;height:6px;border-radius:50%}
+.dot.a{background:var(--appt)}.dot.b{background:var(--bill-fg)}
+.calkey{display:flex;gap:14px;align-items:center;font-size:0.75rem;color:var(--ink2);margin:8px 4px 0}
+.calkey .btn{margin-left:auto}
+.pastbox{margin-top:16px}
+.pastbox summary{cursor:pointer;font-size:0.8125rem;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--ink3);margin:6px 4px 8px}
+.callout.remind{background:var(--appt-bg);color:var(--ink)}
+.callout.remind svg.i{color:var(--appt-fg)}
+.callout.remind .iconbtn{width:34px;height:34px}
 </style>
 </head>
 <body>
