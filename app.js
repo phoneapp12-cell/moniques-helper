@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1087,6 +1087,52 @@ function remindersCard() {
     ${supported ? `<button class="btn small" id="notifybtn" onclick="toggleNotify()">${notifyOn() ? 'Turn off notifications' : 'Turn on notifications'}</button>` : '<p class="muted" style="margin:0">This browser can’t show notifications.</p>'}</div>`;
 }
 
+/* ================= GREETING (1.1.1) =================
+   "Good morning/afternoon/evening, Monique" by the phone's own clock, and a calming phrase underneath.
+   A new phrase each time the app is opened or come back to: all of them go round once before any repeat,
+   and never the same one twice in a row. Kept on this phone only. */
+const CALM = [ "Take a slow breath. You’re doing just fine.", "One thing at a time is plenty.", "Let your shoulders drop a little.", "There’s no rush today.", "Be gentle with yourself.", "Small steps still count.", "You’ve handled a lot, and you’re still here.", "Breathe in slowly, breathe out slower.", "It’s okay to take a moment.", "Today can be simple.", "Rest is part of the plan.", "You don’t have to do it all at once.", "Notice one good thing around you.", "Let this moment be enough.", "A calm mind makes everything lighter.", "You are allowed to go at your own pace.", "Unclench your jaw and soften your hands.", "Whatever today brings, you can meet it gently.", "Pause, breathe, carry on.", "Kindness to yourself is never wasted.", "Let the little things stay little.", "This moment is yours.", "A cup of tea and a quiet minute can work wonders.", "You’ve got this, one step at a time.", "Slow down; the day will wait.", "Peace can start with a single breath.", "Let go of what you can’t control.", "You are more than your to-do list.", "Calm is always just a breath away.", "It’s okay not to have every answer today.", "Sunlight, fresh air and a deep breath.", "Be proud of how far you’ve come.", "Go easy. You’re doing better than you think.", "Let your thoughts settle like leaves on water.", "Quiet moments are good for the heart.", "Take care of you today.", "You can begin again at any moment.", "Gentle progress is still progress.", "Let today unfold softly.", "Rest when you need to; it’s not a race.", "Look up for a moment and notice the sky.", "Breathe in calm, breathe out worry.", "You deserve a little peace today.", "Things don’t have to be perfect to be good.", "Your best is enough.", "Soft and steady wins the day.", "Listen to what your body needs.", "Every day is a fresh page.", "It’s okay to say no and rest.", "A slow morning is a gift.", "Find one small thing to smile about.", "You’re right where you need to be.", "Let your breath be slow and easy.", "A little calm goes a long way.", "Give yourself the patience you give others.", "Put your feet up when you can.", "You’re stronger than you feel today.", "Take it easy and keep it simple.", "Breathe deeply. Let it all slow down.", "Quiet the noise and listen to yourself.", "There’s always time for a deep breath.", "Not everything needs doing today.", "You’re allowed to feel how you feel.", "Let your mind wander somewhere peaceful.", "Tiny moments of rest add up.", "Gentle days are good days too.", "Focus on what’s in front of you.", "Smile softly; it helps more than you think.", "Trust yourself. You know more than you think.", "Settle in, breathe out, relax your face.", "Make room for a little joy today.", "Let yesterday go and greet today kindly.", "You don’t need to carry everything alone.", "Some fresh air might be just the thing.", "Calm thoughts, kind words, easy steps.", "Your pace is the right pace.", "Pause and feel your feet on the ground.", "Let the day be lighter than you expected.", "You are doing enough.", "Close your eyes for three slow breaths.", "A tidy mind starts with a quiet moment.", "Water, rest, and a little kindness.", "Hold onto the good bits of today.", "You can only do today once, so enjoy a bit of it.", "It’s fine to take the long way round.", "Let the busy fade into the background.", "Everything feels easier after a good breath.", "Treat yourself like you’d treat a good friend.", "Soft music and a slow minute can reset the day.", "You’re making it work, and that’s worth noticing.", "Let worry wait outside for a while.", "Steady breathing, steady heart.", "It’s a good day to be kind to yourself.", "Peaceful thoughts make for a peaceful day.", "Give yourself credit for the little wins.", "Let the quiet in.", "One calm minute can change the whole hour.", "Stretch, breathe, and start again.", "You are loved and you are enough.", "Nothing needs to be rushed right now.", "Take a moment to just be.", "Good things can come slowly.", "Breathe like the waves: in, and out.", "Let your heart rest easy.", "Be still for a moment. It’s allowed.", "Whatever you get done today is enough.", "The world can wait while you breathe.", "A gentle day is a good day.", "Feel the calm settle in, little by little." ];
+const CALM_KEY = 'moniquesHelper.calm.v1';
+function greetWord(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 12 ? 'morning' : h >= 12 && h < 17 ? 'afternoon' : 'evening'; }
+const greetText = now => 'Good ' + greetWord(now) + ', Monique';
+let calmNow = '';
+function calmShuffle(avoid) {
+  const idx = CALM.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  if (idx.length > 1 && idx[0] === avoid) [idx[0], idx[1]] = [idx[1], idx[0]];
+  return idx;
+}
+function calmNext() {
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(CALM_KEY) || 'null'); } catch (e) { st = null; }
+  if (!st || !Array.isArray(st.order) || st.order.length !== CALM.length || typeof st.pos !== 'number') st = { order: calmShuffle(-1), pos: 0, last: -1 };
+  if (st.pos >= st.order.length) { st.order = calmShuffle(st.last); st.pos = 0; }
+  let i = st.order[st.pos++];
+  if (i === st.last && st.pos < st.order.length) i = st.order[st.pos++];
+  st.last = i;
+  try { localStorage.setItem(CALM_KEY, JSON.stringify(st)); } catch (e) { }
+  calmNow = CALM[i];
+  return calmNow;
+}
+function greetCard() {
+  if (!calmNow) calmNext();
+  return `<div class="greet" id="greet"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(calmNow)}</div></div>`;
+}
+let greetBand = greetWord();
+setInterval(() => { // the app left open across 5am, 12pm or 5pm
+  const b = greetWord(); if (b === greetBand) return; greetBand = b;
+  const el = document.getElementById('greethi'); if (el) el.textContent = greetText();
+}, 30000);
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  if (hiddenAt && Date.now() - hiddenAt > 2000) { // came back to the app: a new phrase
+    calmNext(); greetBand = greetWord();
+    const a = document.getElementById('greethi'), c = document.getElementById('greetcalm');
+    if (a) a.textContent = greetText(); if (c) c.textContent = calmNow;
+  }
+});
+
 /* ================= ROUTER ================= */
 const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['backup', 'Backup', 'gear']];
 function render() {
@@ -1096,7 +1142,7 @@ function render() {
   try {
     page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
+  $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
   $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${I(ic)}<span>${l}</span></button>`).join('');
 }
