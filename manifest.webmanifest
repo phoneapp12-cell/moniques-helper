@@ -1,0 +1,19 @@
+{
+  "name": "Monique's Helper",
+  "short_name": "Monique's Helper",
+  "description": "Bills, pay, budget and loan repayments by fortnight. Everything stays on your phone.",
+  "id": "./",
+  "start_url": "./#bills",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F6F4FA",
+  "theme_color": "#6D3FC4",
+  "lang": "en-NZ",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
