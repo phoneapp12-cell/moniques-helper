@@ -8,4 +8,4 @@ A small phone app for bills, fortnightly pay, budget and loan repayments.
 - **Backup**: save a backup file and restore it later.
 
 Everything is saved on the phone only (browser storage). Nothing is sent anywhere.
-Open https://phoneapp12-cell.github.io/moniques-helper/ and use "Add to Home Screen" to install it.
+Open https://phoneapp12-cell.github.io/moniques-helper/ and tap **Install app** (Android/Chrome), or on iPhone tap Share, then **Add to Home Screen**.
