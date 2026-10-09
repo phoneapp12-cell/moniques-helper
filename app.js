@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.0.2';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -769,31 +769,75 @@ async function removePlan(loanId) {
 
 
 /* ================= INSTALL AS AN APP ================= */
-let installEvt = null;
-const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-let installed = isStandalone() || localStorage.getItem('moniquesHelper.installed') === '1';
-window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; installed = false; localStorage.removeItem('moniquesHelper.installed'); render(); });
-window.addEventListener('appinstalled', () => { installEvt = null; installed = true; localStorage.setItem('moniquesHelper.installed', '1'); render(); toast('Monique’s Helper is on your home screen.'); });
-function installCard(where) {
-  if (isStandalone() || installed) return '';
-  const btn = `<button class="btn primary" id="installbtn" style="flex:none" onclick="installApp()">${I('download')} Install app</button>`;
-  if (installEvt) return `<div class="card installcard" id="installcard"><div><b>Install Monique’s Helper</b><div class="muted">Put it on your home screen so it opens like a normal app, even offline.</div></div>${btn}</div>`;
-  if (isIOS()) return `<div class="card installcard" id="installcard"><div><b>Install on your iPhone</b><div class="muted">In Safari, tap the Share button ${I('share')}, then <b>Add to Home Screen</b>.</div></div></div>`;
-  return where === 'backup' ? `<div class="card installcard" id="installcard"><div><b>Install as an app</b><div class="muted">Open this page in Chrome (Android) or Safari (iPhone). In Chrome, tap the ⋮ menu, then <b>Install app</b> or <b>Add to Home screen</b>.</div></div></div>` : '';
+// Install help is always shown until the app is opened from the home screen.
+// Android Chrome/Edge: real Install button when the browser offers it, otherwise menu steps.
+// In-app browsers (Messenger, Facebook, Instagram, WhatsApp, Gmail etc.) can't install apps, so offer Open in Chrome + Copy link.
+let installEvt = null, justInstalled = false;
+const UA = navigator.userAgent || '';
+const isStandalone = () => (window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches || matchMedia('(display-mode: minimal-ui)').matches)) || navigator.standalone === true;
+const isIOS = () => /iphone|ipad|ipod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = () => /android/i.test(UA);
+function browserKind() {
+  if (/FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|MessengerLite|WhatsApp|Snapchat|TikTok|musical_ly|BytedanceWebview|Line\/|Twitter|LinkedInApp|Pinterest|GSA\/|KAKAOTALK|Viber/i.test(UA)) return 'inapp';
+  if (isAndroid() && /; wv\)|\bwv\b|Version\/[\d.]+ Chrome\/[\d.]+ Mobile/i.test(UA)) return 'inapp';
+  if (isIOS()) return /CriOS|FxiOS|EdgiOS/i.test(UA) ? 'iosother' : 'ios';
+  if (/SamsungBrowser/i.test(UA)) return 'samsung';
+  if (/Firefox|FxiOS/i.test(UA)) return 'firefox';
+  if (/EdgA|Edg\//i.test(UA)) return 'edge';
+  if (/OPR\/|Opera/i.test(UA)) return 'opera';
+  if (/Chrome\//i.test(UA)) return 'chrome';
+  return 'other';
+}
+const appUrl = () => location.origin + location.pathname;
+const chromeIntent = () => 'intent://' + location.host + location.pathname + '#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=' + encodeURIComponent(appUrl()) + ';end';
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; render(); });
+window.addEventListener('appinstalled', () => { installEvt = null; justInstalled = true; render(); toast('Monique’s Helper is on your home screen. Open it from there.'); });
+function installSteps(k) {
+  const menu = '<b>⋮</b>';
+  switch (k) {
+    case 'chrome': return `Tap the ${menu} menu (top right), then <b>Install app</b> or <b>Add to Home screen</b>, then <b>Install</b>.`;
+    case 'samsung': return `Tap the <b>≡</b> menu (bottom right), then <b>Add page to</b> › <b>Home screen</b>. (Or open this link in Chrome and tap Install app.)`;
+    case 'firefox': return `Tap the ${menu} menu, then <b>Install</b> or <b>Add to Home screen</b>.`;
+    case 'edge': return `Tap the <b>…</b> menu (bottom), then <b>Add to phone</b> or <b>Install app</b>.`;
+    case 'opera': return `Tap the ${menu} menu, then <b>Add to</b> › <b>Home screen</b>.`;
+    case 'ios': return `Tap the Share button ${I('share')} at the bottom, then <b>Add to Home Screen</b>, then <b>Add</b>.`;
+    case 'iosother': return `Tap the Share button ${I('share')}, then <b>Add to Home Screen</b>. If you can’t see it, open this link in Safari.`;
+    default: return isAndroid() ? `Open this link in <b>Chrome</b>, then tap the ${menu} menu › <b>Install app</b>.` : `Open this link on your phone in Chrome (Android) or Safari (iPhone), then add it to your home screen.`;
+  }
+}
+function installCard() {
+  if (isStandalone()) return '';
+  if (justInstalled) return `<div class="card installcard" id="installcard"><div><b>Installed ✓</b><div class="muted">Open Monique’s Helper from your home screen.</div></div></div>`;
+  const k = browserKind();
+  if (k === 'inapp') {
+    return `<div class="card installcard inapp" id="installcard"><div><b>To install, open this in Chrome</b>
+      <div class="muted">This page is open inside another app (like Messenger, Facebook or Gmail), which can’t install apps.${isIOS() ? ' Tap the ⋯ menu and choose <b>Open in Safari</b>, then Share › Add to Home Screen.' : ''}</div>
+      <div class="btns" style="margin-top:10px">${isAndroid() ? `<a class="btn primary" id="openchrome" href="${esc(chromeIntent())}">Open in Chrome</a>` : ''}
+      <button class="btn" id="copylink" onclick="copyAppLink()">Copy link</button></div>
+      <div class="muted" style="margin-top:6px;font-size:0.8125rem">Or tap the app’s ⋮ menu and choose <b>Open in browser</b> / <b>Open in Chrome</b>.</div></div></div>`;
+  }
+  if (installEvt) return `<div class="card installcard" id="installcard"><div><b>Install Monique’s Helper</b><div class="muted">Put it on your home screen so it opens like a normal app, even offline.</div></div><button class="btn primary" id="installbtn" style="flex:none" onclick="installApp()">${I('download')} Install app</button></div>`;
+  return `<div class="card installcard" id="installcard"><div><b>Install Monique’s Helper</b><div class="muted" id="installsteps">${installSteps(k)}</div>
+    <div class="muted" style="margin-top:6px;font-size:0.8125rem">Already installed? Open it from your home screen.</div></div></div>`;
+}
+async function copyAppLink() {
+  const u = appUrl();
+  let ok = false;
+  try { await navigator.clipboard.writeText(u); ok = true; } catch (e) { }
+  if (!ok) { try { const t = document.createElement('textarea'); t.value = u; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); ok = document.execCommand('copy'); t.remove(); } catch (e) { } }
+  toast(ok ? 'Link copied. Open Chrome and paste it in the address bar.' : 'Copy this link: ' + u);
 }
 async function installApp() {
-  if (!installEvt) { toast(isIOS() ? 'Tap Share, then Add to Home Screen.' : 'Use the browser menu, then Install app.'); return; }
+  if (!installEvt) { toast('Use the browser menu, then Install app.'); return; }
   const e = installEvt; installEvt = null;
-  e.prompt();
-  try { const c = await e.userChoice; if (c && c.outcome === 'accepted') { installed = true; localStorage.setItem('moniquesHelper.installed', '1'); } else installEvt = null; } catch (x) { }
+  try { e.prompt(); const c = await e.userChoice; if (c && c.outcome === 'accepted') justInstalled = true; } catch (x) { }
   render();
 }
 
 /* ================= BACKUP ================= */
 function Backup() {
   const n = S.bills.length + S.loans.length + S.budgets.length;
-  return header('Backup', 'Keep a copy of your information') + installCard('backup') +
+  return header('Backup', 'Keep a copy of your information') + installCard() +
     `<div class="card"><p style="margin:0 0 10px">Everything you add is saved on this phone only. Save a backup file now and then, so you can get it back on a new phone.</p>
       <div class="btns"><button class="btn primary" id="exportbtn" onclick="exportData()">${I('download')} Save a backup file</button>
       <button class="btn" onclick="$('#importfile').click()">${I('share')} Restore from a file</button></div>
@@ -831,7 +875,7 @@ function render() {
   try {
     page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = (r === 'bills' || !r ? installCard('top') : '') + page;
+  $('#view').innerHTML = (r === 'bills' || r === '' ? installCard() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
   $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${I(ic)}<span>${l}</span></button>`).join('');
 }
