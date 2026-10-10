@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.1.2';
+const APP_VERSION = '1.2.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -30,6 +30,7 @@ const P = {
   tv: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M8 21h8M9 2l3 4 3-4"/>',
   umbrella: '<path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v7a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   zap: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'
@@ -837,10 +838,35 @@ async function installApp() {
   render();
 }
 
+/* ================= THEMES (1.2.0) =================
+   Her colour choice, saved on this phone only (and in the backup file). The page <head> applies it before drawing. */
+const THEMES = [['purple', 'Purple', '#6D3FC4'], ['pink', 'Pink', '#C2185B'], ['ocean', 'Ocean blue', '#1565C0'], ['teal', 'Sea green', '#0F766E'],
+  ['coral', 'Sunset coral', '#C2410C'], ['forest', 'Forest green', '#2E7D32'], ['lavender', 'Lavender', '#8A4FA8'], ['dark', 'Dark', '#121019']];
+const THEME_KEY = 'moniquesHelper.theme';
+const themeOk = t => THEMES.some(x => x[0] === t);
+function curTheme() { try { const t = localStorage.getItem(THEME_KEY); return themeOk(t) ? t : 'purple'; } catch (e) { return 'purple'; } }
+function applyTheme(t) {
+  if (!themeOk(t)) t = 'purple';
+  document.documentElement.setAttribute('data-theme', t);
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', THEMES.find(x => x[0] === t)[2]);
+}
+function themeGrid() {
+  const c = curTheme();
+  return `<div class="themegrid">${THEMES.map(([k, n, col]) => `<button type="button" class="tswatch ${k === c ? 'on' : ''}" data-theme-pick="${k}" aria-pressed="${k === c}" onclick="setTheme('${k}')"><i style="background:${k === 'dark' ? 'linear-gradient(135deg,#121019 50%,#B79CFF 50%)' : col}"></i>${esc(n)}</button>`).join('')}</div>`;
+}
+function setTheme(t) {
+  if (!themeOk(t)) return;
+  try { localStorage.setItem(THEME_KEY, t); } catch (e) { }
+  applyTheme(t);
+  document.querySelectorAll('.tswatch').forEach(b => { const on = b.dataset.themePick === t; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+}
+function themeSheet() { openSheet('Choose a theme', themeGrid() + '<p class="muted" style="margin:14px 2px 0">Tap a colour to try it. It’s saved on this phone.</p>', null); }
+const themeCard = () => `<div class="sec">Theme</div><div class="card" id="themecard">${themeGrid()}</div>`;
+
 /* ================= BACKUP ================= */
 function Backup() {
   const n = S.bills.length + S.loans.length + S.budgets.length + S.appts.length;
-  return header('Backup', 'Keep a copy of your information') + installCard() + remindersCard() +
+  return header('Backup', 'Your information, and how the app looks') + installCard() + themeCard() + remindersCard() +
     `<div class="card"><p style="margin:0 0 10px">Everything you add is saved on this phone only. Save a backup file now and then, so you can get it back on a new phone.</p>
       <div class="btns"><button class="btn primary" id="exportbtn" onclick="exportData()">${I('download')} Save a backup file</button>
       <button class="btn" onclick="$('#importfile').click()">${I('share')} Restore from a file</button></div>
@@ -848,7 +874,7 @@ function Backup() {
     <div class="foot">${plural(S.bills.length, 'bill')}, ${plural(S.loans.length, 'loan')}, ${plural(S.budgets.length, 'budget')} and ${plural(S.appts.length, 'appointment')} on this phone.${n ? '' : ' Nothing added yet.'}<br>Monique’s Helper ${APP_VERSION}</div>`;
 }
 function exportData() {
-  const blob = new Blob([JSON.stringify({ app: 'moniques-helper', exportedAt: new Date().toISOString(), data: S }, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'moniques-helper', exportedAt: new Date().toISOString(), theme: curTheme(), data: S }, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'moniques-helper-backup-' + todayISO() + '.json';
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -863,7 +889,7 @@ function importData(inp) {
     const d = o && o.app === 'moniques-helper' && o.data ? o.data : null;
     if (!d) { toast('That file isn’t a Monique’s Helper backup.'); return; }
     confirmSheet('Restore this backup?', 'What’s on this phone now will be replaced with the backup from ' + esc(String(o.exportedAt || '').slice(0, 10)) + '.', 'Restore', async () => {
-      const s = snap(); S = normalise(d); await save(); render(); toast('Backup restored.', 'Undo', undoTo(s));
+      const s = snap(); S = normalise(d); if (themeOk(o.theme)) setTheme(o.theme); await save(); render(); toast('Backup restored.', 'Undo', undoTo(s));
     });
   };
   r.readAsText(f);
@@ -1131,7 +1157,8 @@ function calmNext() {
   return calmNow;
 }
 function greetCard() {
-  return `<div class="greet" id="greet"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(lineNow())}</div></div>`;
+  return `<div class="greet" id="greet"><div class="gtx"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(lineNow())}</div></div>
+    <button type="button" class="palbtn" id="palbtn" aria-label="Choose a theme" onclick="themeSheet()">${I('palette')}</button></div>`;
 }
 let greetBand = greetKey();
 function greetPaint() {
