@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,6 +31,11 @@ const P = {
   umbrella: '<path d="M12 3a9 9 0 0 1 9 9H3a9 9 0 0 1 9-9zM12 12v7a2 2 0 0 0 4 0"/>',
   wifi: '<path d="M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 8.8a16 16 0 0 1 20 0M12 20h.01"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.8-1.7 1.7-1.7H16a5 5 0 0 0 5-5c0-4-4-7.2-9-7.2z"/><circle cx="7.5" cy="10.5" r="1.2"/><circle cx="10.5" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/>',
+  call: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+  web: '<circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5a14.5 14.5 0 0 1 0 19M12 2.5a14.5 14.5 0 0 0 0 19"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6.5 8.5-6.5"/>',
   bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   zap: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'
@@ -1177,14 +1182,94 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+
+/* ================= HELP (1.3.0) =================
+   Free and low-cost services in New Zealand, with Whangārei and Northland ones. Built in, so it works offline.
+   Every phone number and link was checked on the service's own website (or the government Family Services
+   Directory) in October 2026. */
+const HELP_CHECKED = 'October 2026';
+const HELP = [
+  { title: 'Mortgage & debt', intro: 'If repayments are getting hard, the sooner you talk to someone, the more options there are.', items: [
+    { id: 'bnz', name: 'BNZ financial hardship (BNZ Care)', what: 'If home loan, credit card, overdraft or personal loan payments are getting hard, BNZ can look at changing your loan.',
+      points: ['Make the loan term longer so each payment is smaller', 'Pause payments for a set time (interest still adds up while paused)', 'Or both of these together',
+        'If you pay more than the minimum on your home loan, you may be able to lower it to the minimum in the BNZ app or Internet Banking'],
+      how: 'Call, or fill in the hardship form and email it to bnzcare@bnz.co.nz, take it to any BNZ branch, or post it to BNZ Care, Private Bag 92089, Auckland 1142. BNZ replies in writing within 20 working days.',
+      note: 'The form asks for every borrower to sign. If a loan is in two names and the other person can’t be reached, tell BNZ when you call. A financial mentor (MoneyTalks) or Community Law can help with this too.',
+      calls: [['0800 375 007', '+64800375007']], hours: 'Monday to Friday, 8am to 5pm', email: 'bnzcare@bnz.co.nz',
+      links: [['Hardship page', 'https://www.bnz.co.nz/support/everyday-accounts/managing-accounts/experiencing-financial-difficulty'], ['Hardship form (PDF)', 'https://www.bnz.co.nz/assets/personal-banking-help-support/forms/hardship-application.pdf'], ['Home loan options', 'https://www.bnz.co.nz/personal-banking/life-moments/what-you-can-do-if-youre-having-trouble-with-mortgage-repayments']] },
+    { id: 'law', name: 'Community Law Taitokerau (Whare Āwhina)', what: 'Free legal advice and help with all kinds of problems, including debt, housing and family matters. Whānau friendly.', cost: 'Free',
+      calls: [['09 437 0185', '+6494370185'], ['0800 155 529', '+64800155529']], hours: 'Monday to Friday, by appointment', email: 'law@whareawhina.org.nz',
+      addr: '93 Cameron Street, Whangārei', more: 'Also at 119 Broadway, Kaikohe, and by appointment in Dargaville, Kaitāia, Moerewa and Wellsford.',
+      links: [['Website', 'https://communitylaw.org.nz/centre/taitokerau/']] },
+    { id: 'moneytalks', name: 'MoneyTalks', what: 'A free helpline that listens and connects you with a free financial mentor near you, for budgeting, debt and money worries.', cost: 'Free',
+      calls: [['0800 345 123', '+64800345123']], text: ['4029', '4029'], links: [['Website', 'https://www.moneytalks.co.nz/'], ['Find a local mentor', 'https://fincap.org.nz/moneytalks/find-a-local-financial-mentor']] },
+    { id: 'legalaid', name: 'Legal Aid (Ministry of Justice)', what: 'Government help to pay for a lawyer if you can’t afford one, for example a court case about money, housing or family.',
+      cost: 'Works like a loan: you may have to pay some or all of it back, depending on your income and what you own', calls: [['0800 253 425', '+64800253425']], hours: 'Monday to Friday, 8am to 5pm',
+      links: [['Can I get legal aid?', 'https://www.justice.govt.nz/courts/going-to-court/legal-aid/get-legal-aid/']] },
+    { id: 'bankomb', name: 'Banking Ombudsman Scheme', what: 'If you’ve raised a problem with your bank and it isn’t sorted, they can look at it. Free and independent. A friend or financial mentor can act for you.', cost: 'Free',
+      calls: [['0800 805 950', '+64800805950']], hours: 'Monday to Friday, 8:30am to 5pm', email: 'help@bankomb.org.nz', links: [['Make a complaint', 'https://www.bankomb.org.nz/make-a-complaint']] }
+  ] },
+  { title: 'Budgeting help', items: [
+    { id: 'wbs', name: 'Whangārei Budgeting Service', what: 'Free one-to-one financial mentoring and budget plans. No referral needed, and no judgement.', cost: 'Free',
+      calls: [['09 430 0177', '+6494300177'], ['0508 637 200', '+64508637200']], callNote: 'Part of NorthAble: choose the budgeting option when you call.', hours: 'Monday to Thursday 8:30am to 4pm, Friday 8:30am to 12:30pm',
+      email: 'reception@whangareibudgeting.co.nz', addr: '40 John Street, Whangārei', links: [['Website', 'https://www.whangareibudgeting.co.nz/']] },
+    { id: 'care', name: 'Whangārei CARE Centre (Te Whare Oranga)', what: 'Free, confidential budget advice: a clear budget, goals, dealing with debts and creditors, and checking what you’re entitled to. Also covers Bream Bay.', cost: 'Budget advice is free',
+      calls: [['09 437 6397', '+6494376397']], hours: 'Monday to Friday, 9am to 5pm', addr: '1 Mill Road, Regent, Whangārei', links: [['Website', 'https://whgcare.org.nz/free-budget-advice-whangarei/']] },
+    { id: 'sorted', name: 'Sorted', what: 'Free, independent money guides and tools for budgeting, paying off debt and building a little emergency savings.', cost: 'Free', links: [['Website', 'https://sorted.org.nz/']] },
+    { id: 'goodloans', name: 'Good Shepherd Good Loans', what: 'No-interest, no-fee loans for essentials like a car, car repairs, a fridge or dental work, paid straight to the supplier. For people on lower incomes.',
+      cost: 'No interest, no fees', more: 'Not for overdue bills, rent or everyday costs. Loans to combine other debts are paused for now.', calls: [['0800 466 370', '+64800466370']], callNote: 'The online form is quickest; call-backs can take a few days.',
+      links: [['Good Loans', 'https://goodshepherd.org.nz/get-support/our-services/loans/']] },
+    { id: 'cap', name: 'Christians Against Poverty (CAP)', what: 'Free debt help: they can come to you, make a money plan with you and talk to the people you owe. A Christian charity, open to everyone whatever you believe. There’s a Whangārei centre.',
+      cost: 'Free', calls: [['0508 227 111', '+64508227111']], email: 'info@capnz.org', links: [['Website', 'https://www.capnz.org/get-help/debt-help/']] }
+  ] },
+  { title: 'Legal & advice', items: [
+    { id: 'cab', name: 'Citizens Advice Bureau Whangārei', what: 'Free, confidential advice about anything, and help finding the right service. No appointment needed.', cost: 'Free',
+      calls: [['09 438 8046', '+6494388046'], ['0800 367 222', '+64800367222']], hours: 'Monday to Friday 9am to 4pm, Saturday 9am to 12:30pm', email: 'whangarei@cab.org.nz',
+      addr: '154 Bank Street, Regent, Whangārei', links: [['Website', 'https://www.cab.org.nz/location/cab-whangarei']] },
+    { id: 'tenancy', name: 'Tenancy Services', what: 'Free information about renting: bonds, rent, notice and your rights.', cost: 'Free to call (the Tenancy Tribunal costs $28 to apply)',
+      calls: [['0800 836 262', '+64800836262']], hours: 'Monday to Friday, 8am to 5:30pm', links: [['Website', 'https://www.tenancy.govt.nz/about-tenancy-services/contact-us/']] },
+    { id: 'youthlaw', name: 'YouthLaw Aotearoa', what: 'Free legal advice for anyone under 25, or someone helping them.', cost: 'Free', calls: [['0800 884 529', '+64800884529']], hours: 'Monday to Friday, 10am to 4pm',
+      links: [['Website', 'https://youthlaw.co.nz/contact-us/']] },
+    { id: 'disputes', name: 'Disputes Tribunal', what: 'Sorts out disputes up to $60,000 without lawyers.', cost: 'Low cost: $62 for claims under $2,000, $124 up to $5,000, $248 up to $30,000, $496 up to $60,000',
+      links: [['Forms & fees', 'https://www.disputestribunal.govt.nz/forms-and-fees/']] }
+  ] },
+  { title: 'Save on bills', intro: 'Free comparison sites. Switching is often quick and can save quite a bit.', items: [
+    { id: 'powerswitch', name: 'Powerswitch', what: 'Compare power and gas plans for your address. Free and independent, run by Consumer NZ, ranked by price.', cost: 'Free', links: [['Website', 'https://www.powerswitch.org.nz/']] },
+    { id: 'bbcompare', name: 'Broadband Compare', what: 'Compare internet plans available at your address by price, speed and data.', cost: 'Free to use', calls: [['0508 226 672', '+64508226672']], links: [['Website', 'https://www.broadbandcompare.co.nz/']] },
+    { id: 'glimp', name: 'Glimp', what: 'Compare broadband, power and mobile plans in a few minutes, with no obligation to switch.', cost: 'Free to use', links: [['Website', 'https://www.glimp.co.nz/']] }
+  ] }
+];
+const mapsUrl = a => 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(a + ', New Zealand');
+function helpCard(x) {
+  const btn = (href, icon, label, cls = '') => `<a class="btn small ${cls}" href="${esc(href)}"${/^https/.test(href) ? ' target="_blank" rel="noopener"' : ''}>${I(icon)} ${esc(label)}</a>`;
+  const calls = (x.calls || []).map(([shown, num]) => btn('tel:' + num, 'call', 'Call ' + shown, 'primary')).join('') + (x.text ? btn('sms:' + x.text[1], 'mail', 'Text ' + x.text[0]) : '');
+  const links = (x.links || []).map(([l, u]) => btn(u, 'web', l)).join('') + (x.email ? btn('mailto:' + x.email, 'mail', 'Email') : '');
+  return `<div class="card helpcard" id="help-${x.id}"><div class="helpname">${esc(x.name)}</div><div class="helpwhat">${esc(x.what)}</div>
+    ${x.points ? `<ul class="helppts">${x.points.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : ''}
+    ${x.how ? `<div class="helpline"><b>How:</b> ${esc(x.how)}</div>` : ''}
+    ${x.note ? `<div class="helpnote">${esc(x.note)}</div>` : ''}
+    ${x.cost ? `<div class="helpline"><b>Cost:</b> ${esc(x.cost)}</div>` : ''}
+    ${x.hours ? `<div class="helpline"><b>Hours:</b> ${esc(x.hours)}</div>` : ''}
+    ${x.addr ? `<div class="helpline"><a class="helpaddr" href="${esc(mapsUrl(x.addr))}" target="_blank" rel="noopener">${I('pin')} ${esc(x.addr)}</a></div>` : ''}
+    ${x.more ? `<div class="helpline muted">${esc(x.more)}</div>` : ''}
+    ${x.callNote ? `<div class="helpline muted">${esc(x.callNote)}</div>` : ''}
+    <div class="btns helpbtns">${calls}${links}</div></div>`;
+}
+function Help() {
+  return header('Help', 'Free and low-cost services that can help') +
+    `<div class="card helpintro">You don’t have to sort everything out on your own. These services help people every day, they’re confidential, and they won’t judge.</div>` +
+    HELP.map(sec => `<div class="sec">${esc(sec.title)}</div>${sec.intro ? `<p class="muted helpsecintro">${esc(sec.intro)}</p>` : ''}${sec.items.map(helpCard).join('')}`).join('') +
+    `<div class="foot">Not legal or financial advice: these services can help with your situation.<br>Phone numbers and links checked ${HELP_CHECKED}.</div>`;
+}
+
 /* ================= ROUTER ================= */
-const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['backup', 'Backup', 'gear']];
+const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
 function render() {
   if (!S) return;
   const h = (location.hash || '#bills').slice(1), [r, arg] = h.split('/');
   let page = '';
   try {
-    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : Bills();
+    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
   $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
