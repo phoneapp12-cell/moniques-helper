@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -865,8 +865,8 @@ function setTheme(t) {
   applyTheme(t);
   document.querySelectorAll('.tswatch').forEach(b => { const on = b.dataset.themePick === t; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
 }
-function themeSheet() { openSheet('Choose a theme', themeGrid() + '<p class="muted" style="margin:14px 2px 0">Tap a colour to try it. It’s saved on this phone.</p>', null); }
-const themeCard = () => `<div class="sec">Theme</div><div class="card" id="themecard">${themeGrid()}</div>`;
+function themeSheet() { openSheet('Choose a theme', themeGrid() + mascotPicker() + '<p class="muted" style="margin:14px 2px 0">Tap a colour to try it. It’s saved on this phone.</p>', null); }
+const themeCard = () => `<div class="sec">Theme</div><div class="card" id="themecard">${themeGrid()}${mascotPicker()}</div>`;
 
 /* ================= BACKUP ================= */
 function Backup() {
@@ -879,7 +879,7 @@ function Backup() {
     <div class="foot">${plural(S.bills.length, 'bill')}, ${plural(S.loans.length, 'loan')}, ${plural(S.budgets.length, 'budget')} and ${plural(S.appts.length, 'appointment')} on this phone.${n ? '' : ' Nothing added yet.'}<br>Monique’s Helper ${APP_VERSION}</div>`;
 }
 function exportData() {
-  const blob = new Blob([JSON.stringify({ app: 'moniques-helper', exportedAt: new Date().toISOString(), theme: curTheme(), data: S }, null, 1)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ app: 'moniques-helper', exportedAt: new Date().toISOString(), theme: curTheme(), mascot: mascotKey(), data: S }, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'moniques-helper-backup-' + todayISO() + '.json';
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -894,7 +894,7 @@ function importData(inp) {
     const d = o && o.app === 'moniques-helper' && o.data ? o.data : null;
     if (!d) { toast('That file isn’t a Monique’s Helper backup.'); return; }
     confirmSheet('Restore this backup?', 'What’s on this phone now will be replaced with the backup from ' + esc(String(o.exportedAt || '').slice(0, 10)) + '.', 'Restore', async () => {
-      const s = snap(); S = normalise(d); if (themeOk(o.theme)) setTheme(o.theme); await save(); render(); toast('Backup restored.', 'Undo', undoTo(s));
+      const s = snap(); S = normalise(d); if (themeOk(o.theme)) setTheme(o.theme); if (MASCOTS[o.mascot]) setMascot(o.mascot); await save(); render(); toast('Backup restored.', 'Undo', undoTo(s));
     });
   };
   r.readAsText(f);
@@ -1163,7 +1163,7 @@ function calmNext() {
 }
 function greetCard() {
   return `<div class="greet" id="greet"><div class="gtx"><div class="greethi" id="greethi">${esc(greetText())}</div><div class="greetcalm" id="greetcalm">${esc(lineNow())}</div></div>
-    <button type="button" class="palbtn" id="palbtn" aria-label="Choose a theme" onclick="themeSheet()">${I('palette')}</button></div>`;
+    ${mascotHtml()}<button type="button" class="palbtn" id="palbtn" aria-label="Choose a theme" onclick="themeSheet()">${I('palette')}</button></div>`;
 }
 let greetBand = greetKey();
 function greetPaint() {
@@ -1182,6 +1182,161 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+
+/* ================= MASCOT (1.4.0) =================
+   A little dog (or cat) at the top of the greeting. Its mood follows the phone's clock: lively early morning,
+   sleepier through the day, curled up asleep 9pm to 5am. Tap it for a gentle line. If nothing is scrolled or
+   touched for 20 seconds while it's awake, it taps the screen with its paw (up to 3 times, then waits).
+   Party hat on her birthday. Inline SVG + CSS only; saved on this phone and in the backup file. */
+const MASCOT_KEY = 'moniquesHelper.mascot';
+const MASCOTS = {
+  dog: { name: 'Dog', says: { energetic: ['Woof!', 'Ball?', 'Hello!'], alert: ['Woof!', 'Pats?', 'Boof!'], tired: ['boof…', 'Pats?', '*yawn*'], drowsy: ['boof…', '*yawn*', 'Cosy time?'], sleep: ['snore…', 'zzz…', '*snuffle*'] } },
+  cat: { name: 'Cat', says: { energetic: ['Meow!', 'Mrrp!', 'Hello!'], alert: ['Meow!', 'Hi there!', 'Mrrp?'], tired: ['Mew…', 'Cuppa?', 'Meow.'], drowsy: ['mew…', '*yawn*', 'Cosy time?'], sleep: ['purr…', 'zzz…', 'mrrr…'] } }
+};
+const MOOD_WORDS = { energetic: 'wide awake', alert: 'alert', tired: 'a bit tired', drowsy: 'drowsy', sleep: 'asleep' };
+function mascotKey() { try { const k = localStorage.getItem(MASCOT_KEY); return MASCOTS[k] ? k : 'dog'; } catch (e) { return 'dog'; } }
+function mascotMood(now = new Date()) { const h = now.getHours(); return h >= 5 && h < 9 ? 'energetic' : h >= 9 && h < 13 ? 'alert' : h >= 13 && h < 17 ? 'tired' : h >= 17 && h < 21 ? 'drowsy' : 'sleep'; }
+function mascotHtml() {
+  const st = mascotMood(), k = mascotKey();
+  return `<button type="button" class="hcat cat-${st}${k === 'dog' ? ' hdog' : ''}${isBirthday() ? ' bday' : ''}" id="hcat" aria-label="The ${k} is ${MOOD_WORDS[st]}" onclick="mascotPoke(event)">${k === 'dog' ? dogSvg() : catSvg()}<span class="ctrip" aria-hidden="true"></span><span class="cbub" aria-hidden="true"></span></button>`;
+}
+const mascotMini = k => `<span class="hcat mprev cat-alert${k === 'dog' ? ' hdog' : ''}" aria-hidden="true">${k === 'dog' ? dogSvg() : catSvg()}</span>`;
+function mascotPicker() {
+  const c = mascotKey();
+  return `<div class="mascotpick" role="radiogroup" aria-label="Mascot"><div class="mptitle">Mascot</div><div class="mpbtns">${Object.keys(MASCOTS).map(k => `<button type="button" class="mpbtn ${k === c ? 'on' : ''}" role="radio" aria-checked="${k === c}" data-mascot="${k}" onclick="setMascot('${k}')">${mascotMini(k)}<span>${MASCOTS[k].name}</span></button>`).join('')}</div></div>`;
+}
+function setMascot(k) {
+  if (!MASCOTS[k]) return;
+  try { localStorage.setItem(MASCOT_KEY, k); } catch (e) { }
+  document.querySelectorAll('.mpbtn').forEach(b => { const on = b.dataset.mascot === k; b.classList.toggle('on', on); b.setAttribute('aria-checked', on); });
+  const el = document.getElementById('hcat'); if (el) el.outerHTML = mascotHtml();
+}
+function mascotTick() {
+  const el = document.getElementById('hcat'); if (!el) return;
+  const st = mascotMood();
+  el.classList.toggle('bday', isBirthday());
+  if (el.classList.contains('cat-' + st)) return;
+  el.className = el.className.replace(/\bcat-(energetic|alert|tired|drowsy|sleep)\b/, 'cat-' + st);
+  el.setAttribute('aria-label', 'The ' + mascotKey() + ' is ' + MOOD_WORDS[st]);
+}
+setInterval(mascotTick, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { mascotTick(); mIdleAt = Date.now(); } });
+let mPokeT = null;
+function mascotPoke(e) {
+  try { if (e) e.stopPropagation(); } catch (x) { }
+  const el = document.getElementById('hcat'); if (!el) return;
+  mascotTick();
+  const st = mascotMood(), bub = el.querySelector('.cbub');
+  const says = MASCOTS[mascotKey()].says[st].concat(isBirthday() && st !== 'sleep' ? ['Happy birthday!', 'Party time!'] : []);
+  if (bub) bub.textContent = says[Math.floor(Math.random() * says.length)];
+  el.classList.remove('react'); void el.offsetWidth; el.classList.add('react');
+  clearTimeout(mPokeT); mPokeT = setTimeout(() => el.classList.remove('react'), 1600);
+}
+const M_IDLE_MS = 20000, M_TAP_MAX = 3;
+const M_TAP = { energetic: { ms: 1150, say: 'tap tap' }, alert: { ms: 850, say: 'tap!' }, tired: { ms: 1350, say: 'tap…' }, drowsy: { ms: 2100, say: '…tap?' } };
+let mIdleAt = Date.now(), mTaps = 0, mTapT = null;
+function mascotAwake() { mIdleAt = Date.now(); mTaps = 0; }
+['touchstart', 'pointerdown', 'keydown', 'wheel'].forEach(ev => document.addEventListener(ev, mascotAwake, { capture: true, passive: true }));
+document.addEventListener('scroll', e => { const t = e.target; if (t === document || t === document.scrollingElement || (t && t.id === 'view')) mascotAwake(); }, { capture: true, passive: true });
+function mascotTapNow() {
+  const el = document.getElementById('hcat'); if (!el) return false;
+  mascotTick();
+  const cfg = M_TAP[mascotMood()];
+  if (!cfg || el.classList.contains('react') || el.classList.contains('tapping')) return false;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches, bub = el.querySelector('.cbub');
+  if (bub) bub.textContent = still ? '🐾' : cfg.say;
+  el.classList.add('tapping');
+  clearTimeout(mTapT); mTapT = setTimeout(() => el.classList.remove('tapping'), still ? 1600 : cfg.ms + 500);
+  return true;
+}
+function mascotIdleCheck() {
+  if (document.hidden || sheetOpen || mTaps >= M_TAP_MAX || Date.now() - mIdleAt < M_IDLE_MS) return;
+  const el = document.getElementById('hcat');
+  mIdleAt = Date.now();
+  if (!el || mascotMood() === 'sleep') return;
+  const r = el.getBoundingClientRect();
+  if (r.bottom <= 0 || r.top >= innerHeight || !r.width) return;
+  if (mascotTapNow()) mTaps++;
+}
+setInterval(mascotIdleCheck, 1000);
+function catSvg() {
+  const ears = (a, b) => `<path class="cear" d="${a}"/><path class="cearin" d="${b}"/>`;
+  return `<svg viewBox="0 0 48 40" aria-hidden="true">
+<g class="csit">
+  <path class="ctail" d="M33 35 C42 35 46 27 42 17"/><path class="ctail ctip" pathLength="100" d="M33 35 C42 35 46 27 42 17"/>
+  <ellipse class="cfur" cx="24" cy="30" rx="11" ry="8.5"/>
+  <ellipse class="cbelly" cx="24" cy="32" rx="5.5" ry="5"/>
+  <ellipse class="cfur cpawl" cx="19.5" cy="37.6" rx="3" ry="1.9"/>
+  <ellipse class="cfur cpaw" cx="28.5" cy="37.6" rx="3" ry="1.9"/>
+  <g class="ctapaw"><ellipse class="cfur" cx="28.5" cy="37.4" rx="3.3" ry="2.5"/><ellipse class="cbean" cx="28.5" cy="38.1" rx="1.3" ry="1"/><circle class="cbean" cx="26.6" cy="36.4" r=".55"/><circle class="cbean" cx="28.5" cy="35.8" r=".55"/><circle class="cbean" cx="30.4" cy="36.4" r=".55"/></g>
+  <g class="chead">
+    ${ears('M15.5 13 L16.5 3.5 L23 9 Z', 'M17.2 10.5 L17.6 6.4 L20.6 9 Z')}${ears('M32.5 13 L31.5 3.5 L25 9 Z', 'M30.8 10.5 L30.4 6.4 L27.4 9 Z')}
+    <circle class="cfur" cx="24" cy="15.5" r="9"/>
+    <path class="cstripe" d="M21.5 7.4 L22.4 10.2 M24 7 L24 10 M26.5 7.4 L25.6 10.2"/>
+    <ellipse class="ceye" cx="20.3" cy="15.4" rx="1.7" ry="2.3"/><ellipse class="ceye" cx="27.7" cy="15.4" rx="1.7" ry="2.3"/>
+    <path class="clid" d="M18.4 13.6 Q20.3 12.2 22.2 13.6 M25.8 13.6 Q27.7 12.2 29.6 13.6"/>
+    <path class="cnose" d="M22.9 18.6 L25.1 18.6 L24 19.8 Z"/>
+    <ellipse class="cmouth" cx="24" cy="21.6" rx="1.7" ry="1.9"/>
+    <path class="cwhisk" d="M14 18 L19 18.8 M14.4 20.6 L19 19.8 M34 18 L29 18.8 M33.6 20.6 L29 19.8"/>
+    <g class="chat"><path class="chatc" d="M20.6 7.4 L24 -2 L27.4 7.4 Z"/><path class="chats" d="M21.9 3.9 L26.1 3.9 M22.9 1.1 L25.1 1.1"/><circle class="chatp" cx="24" cy="-2.3" r="1.5"/></g>
+  </g>
+</g>
+<g class="csleep">
+  <g class="cbreath">
+    <path class="ctail2" d="M38 33 C38 39 22 40 13 37"/><path class="ctail2 ctip" pathLength="100" d="M38 33 C38 39 22 40 13 37"/>
+    <ellipse class="cfur" cx="26" cy="30" rx="13.5" ry="7.5"/>
+    ${ears('M8.5 26 L8.8 18.5 L13.5 22.5 Z', 'M9.6 23.8 L9.8 20.7 L12 22.4 Z')}${ears('M19 24.5 L17.5 17.8 L13.8 22 Z', 'M17.6 22.8 L17 20 L15.2 22.1 Z')}
+    <circle class="cfur" cx="13.5" cy="29" r="6.6"/>
+    <path class="cshut" d="M9.6 29 Q11 30.4 12.4 29 M14.6 29 Q16 30.4 17.4 29"/>
+    <path class="cnose" d="M12.5 31.3 L14.5 31.3 L13.5 32.3 Z"/>
+    <ellipse class="cfur" cx="17.5" cy="35.6" rx="3.2" ry="1.8"/>
+    <g class="chat"><path class="chatc" d="M10.6 23.2 L13.4 14.6 L16.4 23.2 Z" transform="rotate(-18 13.5 23)"/><circle class="chatp" cx="10.9" cy="15.4" r="1.3"/></g>
+  </g>
+  <text class="cz cz1" x="30" y="18">z</text><text class="cz cz2" x="35" y="12">z</text><text class="cz cz3" x="40" y="6">Z</text>
+</g>
+</svg>`;
+}
+function dogSvg() {
+  return `<svg viewBox="0 0 48 40" aria-hidden="true">
+<g class="csit">
+  <path class="ctail" d="M33 34 C40 34 43 28 41 21"/><path class="ctail ctip" pathLength="100" d="M33 34 C40 34 43 28 41 21"/>
+  <ellipse class="cfur" cx="24" cy="30" rx="11" ry="8.5"/>
+  <ellipse class="cbelly" cx="24" cy="32" rx="5.5" ry="5"/>
+  <ellipse class="cfur cpawl" cx="19.5" cy="37.6" rx="3" ry="1.9"/>
+  <ellipse class="cfur cpaw" cx="28.5" cy="37.6" rx="3" ry="1.9"/>
+  <g class="ctapaw"><ellipse class="cfur" cx="28.5" cy="37.4" rx="3.3" ry="2.5"/><ellipse class="cbean" cx="28.5" cy="38.1" rx="1.3" ry="1"/><circle class="cbean" cx="26.6" cy="36.4" r=".55"/><circle class="cbean" cx="28.5" cy="35.8" r=".55"/><circle class="cbean" cx="30.4" cy="36.4" r=".55"/></g>
+  <path class="ccollar" d="M16.6 22.6 Q24 26.6 31.4 22.6"/><circle class="ctag" cx="24" cy="25.6" r="1.2"/>
+  <g class="chead">
+    <ellipse class="cfur" cx="24" cy="15.5" rx="9.4" ry="8.7"/>
+    <ellipse class="cspot" cx="27.9" cy="14.6" rx="2.9" ry="2.7"/>
+    <ellipse class="ceye" cx="20.3" cy="15" rx="1.6" ry="2"/><ellipse class="ceye" cx="27.7" cy="15" rx="1.6" ry="2"/>
+    <path class="clid" d="M18.4 13.2 Q20.3 11.8 22.2 13.2 M25.8 13.2 Q27.7 11.8 29.6 13.2"/>
+    <ellipse class="cbelly" cx="24" cy="19.6" rx="4.6" ry="3.4"/>
+    <ellipse class="cnose" cx="24" cy="18" rx="1.7" ry="1.15"/>
+    <path class="cwhisk" d="M24 19.2 L24 20.4 M22.2 20.8 Q24 22 25.8 20.8"/>
+    <ellipse class="cmouth" cx="24" cy="21.8" rx="1.6" ry="1.8"/>
+    <path class="cear cearl" d="M16.4 9.4 C11.6 8.8 10.4 15 12 20.6 C13.2 22.6 15.8 21.2 16.4 17.6 Z"/>
+    <path class="cear cearr" d="M31.6 9.4 C36.4 8.8 37.6 15 36 20.6 C34.8 22.6 32.2 21.2 31.6 17.6 Z"/>
+    <g class="chat"><path class="chatc" d="M20.6 7.4 L24 -2 L27.4 7.4 Z"/><path class="chats" d="M21.9 3.9 L26.1 3.9 M22.9 1.1 L25.1 1.1"/><circle class="chatp" cx="24" cy="-2.3" r="1.5"/></g>
+  </g>
+</g>
+<g class="csleep">
+  <g class="cbreath">
+    <path class="ctail2" d="M38.5 32 C41 38.5 26 40.5 15 37.5"/><path class="ctail2 ctip" pathLength="100" d="M38.5 32 C41 38.5 26 40.5 15 37.5"/>
+    <ellipse class="cfur" cx="26" cy="30" rx="13.5" ry="7.5"/>
+    <ellipse class="cfur" cx="13.8" cy="29" rx="7" ry="6.4"/>
+    <path class="cshut" d="M10.8 28 Q12 29.2 13.2 28 M14.6 28 Q15.8 29.2 17 28"/>
+    <ellipse class="cbelly" cx="13.9" cy="32" rx="3.3" ry="2.3"/>
+    <ellipse class="cnose" cx="13.9" cy="31.1" rx="1.15" ry=".8"/>
+    <path class="cear" d="M9.2 24 C5.8 25 5.6 30.6 7.8 33 C9 34 10.2 31.4 9.9 28.4 Z"/>
+    <path class="cear" d="M18.4 24 C21.8 25 22 30.6 19.8 33 C18.6 34 17.4 31.4 17.7 28.4 Z"/>
+    <ellipse class="cfur" cx="19" cy="35.8" rx="3.2" ry="1.8"/>
+    <g class="chat"><path class="chatc" d="M10.6 23.2 L13.4 14.6 L16.4 23.2 Z" transform="rotate(-18 13.5 23)"/><circle class="chatp" cx="10.9" cy="15.4" r="1.3"/></g>
+  </g>
+  <text class="cz cz1" x="30" y="18">z</text><text class="cz cz2" x="35" y="12">z</text><text class="cz cz3" x="40" y="6">Z</text>
+</g>
+</svg>`;
+}
 
 /* ================= HELP (1.3.0) =================
    Free and low-cost services in New Zealand, with Whangārei and Northland ones. Built in, so it works offline.
