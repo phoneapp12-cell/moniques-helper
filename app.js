@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.5.1';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -1234,14 +1234,12 @@ function mascotPoke(e) {
   if (mascotKey() === 'cat') catTapCount(el);
 }
 
-/* Cat taps (1.4.1): 4+ quick taps purr, 11 taps and she gets up and walks around the page. */
-let cTaps = 0, cTapT = null, cWalking = false, cAudio = null;
+/* Cat taps (1.4.1): 4+ quick taps purr, (1.5.1: walk removed). */
+let cTaps = 0, cTapT = null, cAudio = null;
 function catTapCount(el) {
-  if (cWalking) return;
   clearTimeout(cTapT); cTapT = setTimeout(() => { cTaps = 0; }, 3000);
   cTaps++;
-  if (cTaps > 10) { cTaps = 0; catWalk(el); }
-  else if (cTaps > 3) catPurr(el);
+  if (cTaps > 3) catPurr(el);
 }
 function catPurr(el) {
   el.classList.remove('purring'); void el.offsetWidth; el.classList.add('purring');
@@ -1261,22 +1259,6 @@ function catPurr(el) {
     src.connect(lp).connect(am).connect(env).connect(ac.destination);
     lfo.start(t); src.start(t); lfo.stop(t + dur); src.stop(t + dur);
   } catch (e) { }
-}
-function catWalk(el) {
-  const r = el.getBoundingClientRect(); if (!r.width) return;
-  cWalking = true;
-  const w = el.cloneNode(true); w.removeAttribute('id'); w.removeAttribute('onclick'); w.classList.remove('react', 'purring'); w.classList.add('catwalker');
-  w.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;right:auto;z-index:9999;pointer-events:none`;
-  document.body.appendChild(w); el.style.visibility = 'hidden';
-  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const vw = innerWidth, vh = innerHeight, W = r.width, H = r.height;
-  const pts = reduce ? [[r.left, r.top], [Math.max(8, r.left - vw * 0.35), r.top], [r.left, r.top]]
-    : [[r.left, r.top], [8, Math.min(vh - H - 20, vh * 0.35)], [vw * 0.35, vh * 0.65], [vw - W - 8, vh - H - 90], [vw - W - 8, vh * 0.3], [r.left, r.top]];
-  const frames = []; let dir = -1;
-  pts.forEach((p, i) => { if (i) dir = p[0] < pts[i - 1][0] ? 1 : -1; frames.push({ transform: `translate(${p[0] - r.left}px,${p[1] - r.top}px) scaleX(${i ? dir : 1})` }); });
-  const per = reduce ? 1100 : 1700;
-  const a = w.animate(frames, { duration: per * (pts.length - 1), easing: 'linear' });
-  a.onfinish = a.oncancel = () => { w.remove(); el.style.visibility = ''; cWalking = false; el.classList.add('react'); setTimeout(() => el.classList.remove('react'), 1600); };
 }
 const M_IDLE_MS = 20000, M_TAP_MAX = 3;
 const M_TAP = { energetic: { ms: 1150, say: 'tap tap' }, alert: { ms: 850, say: 'tap!' }, tired: { ms: 1350, say: 'tap…' }, drowsy: { ms: 2100, say: '…tap?' } };
