@@ -433,6 +433,13 @@ html[data-theme="dark"] .hcat .cz{fill:#B9B3E8}
 .mpbtn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:54px;border-radius:14px;border:2px solid var(--line);background:var(--card);color:var(--ink);font:inherit;font-weight:700;cursor:pointer}
 .mpbtn.on{border-color:var(--brand);background:var(--brand2)}
 @media (prefers-reduced-motion:reduce){.hcat *,.hcat svg{animation:none!important;transition:none!important}}
+@keyframes cpurr{0%,100%{transform:translate(0,0)}25%{transform:translate(-1px,.5px) rotate(-1deg)}50%{transform:translate(1px,-.5px)}75%{transform:translate(-.5px,.5px) rotate(1deg)}}
+.hcat.purring svg{animation:cpurr .09s linear 16}
+@keyframes cbob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-4px) rotate(2deg)}}
+.catwalker svg{animation:cbob .32s ease-in-out infinite}
+.catwalker .cpawl,.catwalker .cpaw{animation:cbob .32s ease-in-out infinite alternate}
+.catwalker .cbub,.catwalker .ctrip{display:none}
+@media (prefers-reduced-motion:reduce){.hcat.purring svg{animation-iteration-count:4}}
 </style>
 </head>
 <body>
