@@ -440,6 +440,37 @@ html[data-theme="dark"] .hcat .cz{fill:#B9B3E8}
 @media (prefers-reduced-motion:reduce){.hcat.purring svg{animation-iteration-count:4}}
 html.gfx #app{background:var(--sky,var(--bg))}
 html.gfx .themegrid .tswatch i{background-size:cover}
+
+/* 1.7.0 artwork + shopping */
+.i3{width:30px;height:30px;object-fit:contain;display:block}
+.i3line{display:contents}
+#mhtabs button .tabi3{width:26px;height:26px;opacity:.82}
+#mhtabs button.on .tabi3{opacity:1;transform:scale(1.08)}
+.ic.bill:has(img.i3){background:none!important}
+.banwrap{position:relative}
+.banwrap .banbtns{display:flex;justify-content:flex-end;gap:8px;margin:0 0 6px}
+.top.banhead{position:relative;align-items:center;min-height:96px;padding:12px 12px 12px 16px;border-radius:18px;background-size:cover;background-position:center right;margin-bottom:12px;box-shadow:0 6px 18px rgba(10,40,90,.15);overflow:hidden}
+.top.banhead::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(6,22,52,.55),rgba(6,22,52,.15) 60%,transparent);pointer-events:none}
+.top.banhead>*{position:relative}
+.banhead .bantx{min-width:0;flex:1;max-width:62%}
+html body .top.banhead:not(.banfail) .bantx :is(h1,.sub){color:#fff!important;-webkit-text-fill-color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.6),0 0 8px rgba(0,0,0,.25)!important}
+.top.banhead.banfail{min-height:0;padding:6px 0 12px;border-radius:0;box-shadow:none;overflow:visible}
+.top.banhead.banfail::before{display:none}
+.shopadd{display:flex;gap:8px;margin:0 0 12px}
+.shopadd input{flex:1;min-width:0;font:inherit;padding:12px 14px;border-radius:14px;border:1px solid var(--line);background:var(--card,#fff);color:var(--ink)}
+.shopadd .btn{flex:none;padding:0 16px}
+.shoprow{display:flex;align-items:center;gap:12px;padding:10px 12px}
+.shoprow .tx{flex:1;min-width:0}
+.shoprow.done .t{text-decoration:line-through;opacity:.6}
+.shoptick{flex:none;width:28px;height:28px;border-radius:9px;border:2px solid var(--ink3);background:none;display:grid;place-items:center;color:#fff;cursor:pointer}
+.shoptick.on{background:var(--brand);border-color:var(--brand)}
+.shoptick svg{width:18px;height:18px}
+.shopqty{color:var(--ink3);font-weight:500}
+.iconbtn.small{width:34px;height:34px}
+.iconbtn.small svg{width:18px;height:18px}
+.shopgot{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;color:var(--ink3);font-weight:700;font-size:.85rem}
+#mhtabs button{min-width:0}
+#mhtabs button span{font-size:.68rem}
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap">
 <style>

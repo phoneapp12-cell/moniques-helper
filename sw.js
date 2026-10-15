@@ -1,7 +1,7 @@
 /* Monique's Helper service worker: keeps the app working offline. No push, no tracking, nothing sent anywhere. */
-const VERSION = '1.6.0';
+const VERSION = '1.7.0';
 const CACHE = 'moniques-helper-' + VERSION;
-const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
+const SHELL = ['./', 'index.html', 'app.js', 'core.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png', 'art/i3-bill.webp', 'art/i3-cal.webp', 'art/i3-money.webp', 'art/i3-shop.webp', 'art/i3-health.webp'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });

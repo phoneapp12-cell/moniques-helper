@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -12,6 +12,7 @@ const P = {
   bill: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6M9 16h3"/>',
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   cash: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
+  cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2.5 3.5h3l2.4 11.5h11l2-8H7"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   coins: '<ellipse cx="9" cy="6.5" rx="6" ry="2.5"/><path d="M3 6.5v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4"/><path d="M15 10.5c3.3 0 6 1.1 6 2.5s-2.7 2.5-6 2.5-6-1.1-6-2.5"/><path d="M9 13v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
@@ -45,7 +46,7 @@ const I = (n, a = '') => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true" 
 
 /* ---------- data (this phone only) ---------- */
 let S = null;
-const blank = () => ({ version: 1, bills: [], loans: [], budgets: [], appts: [], settings: {} });
+const blank = () => ({ version: 1, bills: [], loans: [], budgets: [], appts: [], shop: [], settings: {} });
 function normalise(d) {
   d = d && typeof d === 'object' ? d : {};
   if (!Array.isArray(d.bills)) d.bills = [];
@@ -53,6 +54,7 @@ function normalise(d) {
   d.loans = normLoans(d.loans);
   d.budgets = normBudgets(d.budgets);
   d.appts = normAppts(d.appts);
+  d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: x.from === 'shane' ? 'shane' : '' }));
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
   d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [] };
   d.version = 1;
@@ -78,6 +80,46 @@ function billIcon(name) {
   if (/rates|rent|mortgage|council|house/.test(n)) return 'house';
   if (/water/.test(n)) return 'drop';
   return 'bill';
+}
+
+/* 1.7.0: 3D artwork (same approved art as My App). Every image falls back to the line icon / plain header if it can't load. */
+const BILL_ART = { zap: 'zap', phone: 'phone', wifi: 'wifi', tv: 'tv', umbrella: 'umbrella', house: 'house', drop: 'drop', bill: 'bill', coins: 'money' };
+const TAB_ART = { bills: 'bill', calendar: 'cal', budget: 'money', shopping: 'shop', loans: 'money', help: 'health' };
+function artIc(art, line, cls = 'i3') {
+  try { if (!art) return I(line); return `<img src="art/i3-${art}.webp" alt="" class="${cls}" onerror="var n=this.nextElementSibling;if(n)n.style.display='';this.remove()"><span class="i3line" style="display:none">${I(line)}</span>`; } catch (e) { return I(line); }
+}
+const billIc = (name, loan) => { try { const k = loan ? 'coins' : billIcon(name); return artIc(BILL_ART[k], k); } catch (e) { return I('bill'); } };
+function banHeader(title, sub, extra, k) {
+  try {
+    return `<div class="banwrap">${extra ? `<div class="iconrow banbtns">${extra}</div>` : ''}<div class="top banhead" style="background-image:url(art/${k}-banner.webp)"><img src="art/${k}-banner.webp" alt="" hidden onerror="var h=this.closest('.banhead');if(h){h.classList.add('banfail');h.style.backgroundImage='none'}"><div class="bantx"><h1>${title}</h1>${sub ? `<div class="sub">${sub}</div>` : ''}</div></div></div>`;
+  } catch (e) { return header(title, sub, extra); }
+}
+
+/* 1.7.0: simple shopping list. Shane can send a one-time copy of his list with a link (#shopimport=…); nothing syncs. */
+function Shopping() {
+  const left = S.shop.filter(x => !x.done), got = S.shop.filter(x => x.done);
+  const row = x => `<div class="row shoprow${x.done ? ' done' : ''}"><button class="shoptick${x.done ? ' on' : ''}" aria-label="${x.done ? 'Not got' : 'Got'} ${esc(x.name)}" onclick="shopTick('${x.id}')">${x.done ? I('check') : ''}</button><div class="tx"><div class="t">${esc(x.name)}${x.qty ? ` <span class="shopqty">${esc(x.qty)}</span>` : ''}</div>${x.from === 'shane' ? '<div class="s">From Shane’s list</div>' : ''}</div><button class="iconbtn small" aria-label="Delete ${esc(x.name)}" onclick="shopDel('${x.id}')">${I('trash')}</button></div>`;
+  return banHeader('Shopping', left.length ? plural(left.length, 'thing') + ' to get' : 'Nothing to get', '', 'shopping') +
+    `<form class="shopadd" onsubmit="event.preventDefault();shopAdd()"><input id="shopin" type="text" maxlength="80" placeholder="Add something…" autocomplete="off" aria-label="Add to shopping list"><button class="btn primary" type="submit" aria-label="Add">${I('plus')}</button></form>` +
+    (S.shop.length ? `<div class="card list">${left.map(row).join('')}${got.length ? `<div class="shopgot">Got (${got.length}) <button class="linkbtn" onclick="shopClear()">Clear</button></div>` + got.map(row).join('') : ''}</div>` : empty('Your shopping list is empty', 'Type above to add something.'));
+}
+async function shopAdd() { const el = $('#shopin'); const v = el && el.value.trim(); if (!v) return; S.shop.unshift({ id: uid('s'), name: v.slice(0, 80), qty: '', done: false, from: '' }); await save(); render(); setTimeout(() => { const e = $('#shopin'); if (e) e.focus(); }, 30); }
+async function shopTick(id) { const x = S.shop.find(y => y.id === id); if (!x) return; x.done = !x.done; await save(); render(); }
+async function shopDel(id) { const s0 = snap(), x = S.shop.find(y => y.id === id); S.shop = S.shop.filter(y => y.id !== id); await save(); render(); if (x) toast('Deleted ' + x.name, 'Undo', undoTo(s0)); }
+async function shopClear() { const s0 = snap(); S.shop = S.shop.filter(y => !y.done); await save(); render(); toast('Cleared ticked items', 'Undo', undoTo(s0)); }
+async function shopImportFromHash() {
+  try {
+    const m = /^#shopimport=([\w-]+)/.exec(location.hash || ''); if (!m || !S) return;
+    let b = m[1].replace(/-/g, '+').replace(/_/g, '/'); while (b.length % 4) b += '=';
+    const data = JSON.parse(decodeURIComponent(escape(atob(b))));
+    const items = (Array.isArray(data && data.i) ? data.i : []).slice(0, 200);
+    const have = new Set(S.shop.filter(x => !x.done).map(x => x.name.trim().toLowerCase()));
+    let n = 0;
+    items.forEach(it => { const name = String((it && it.n) || '').trim().slice(0, 80); if (!name || have.has(name.toLowerCase())) return; have.add(name.toLowerCase()); S.shop.push({ id: uid('s'), name, qty: String((it && it.q) || '').slice(0, 20), done: false, from: 'shane' }); n++; });
+    if (n) await save();
+    history.replaceState(null, '', location.pathname + '#shopping'); render();
+    toast(n ? 'Added ' + plural(n, 'item') + ' from Shane’s shopping list' : 'Those items are already on your list');
+  } catch (e) { try { history.replaceState(null, '', location.pathname + '#shopping'); render(); toast('Sorry, that shopping link didn’t work.'); } catch (x) { } }
 }
 
 /* ---------- small UI helpers ---------- */
@@ -211,7 +253,7 @@ function Bills() {
   const showPay = S.bills.length > 0 || hasLoanPlans;
   const row = b => {
     const d = daysLeft(b.due);
-    return `<div class="row bill"><button class="tapzone" onclick="billForm('${b.id}')" aria-label="Edit ${esc(b.name)}"><div class="ic bill">${I(billIcon(b.name))}</div>
+    return `<div class="row bill"><button class="tapzone" onclick="billForm('${b.id}')" aria-label="Edit ${esc(b.name)}"><div class="ic bill">${billIc(b.name)}</div>
       <div class="tx"><div class="t">${esc(b.name)}</div><div class="s">${REPEATS[b.repeat] || 'One-off'} · ${b.paid ? 'paid ' + fmt(b.paidOn || b.due) : 'due ' + fmtW(b.due)}</div></div></button>
       <div class="right badgestack">${b.paid ? '<span class="pill paid">Paid ✓</span>' : duePill(d)}${moneyBadge(b.amount, b.name)}
       ${b.paid ? `<button class="paybtn" onclick="unpay('${b.id}')">Undo</button>` : `<button class="paybtn" onclick="markPaid('${b.id}')">Mark paid</button>`}</div></div>`;
@@ -255,12 +297,12 @@ function Bills() {
           <div class="right badgestack">${pp.off <= 0 || dl <= 7 ? duePill(dl) : ''}${moneyBadge(x.cents / 100, name)}<button class="paybtn" onclick="payForm('${x.l.id}')">Record</button></div></div>`;
       }
       if (x.kind === 'paid') {
-        return `<div class="row bill payrow paidrow"><button class="tapzone" onclick="billForm('${x.b.id}')" aria-label="Edit ${esc(x.b.name)}"><div class="ic bill">${I(billIcon(x.b.name))}</div>
+        return `<div class="row bill payrow paidrow"><button class="tapzone" onclick="billForm('${x.b.id}')" aria-label="Edit ${esc(x.b.name)}"><div class="ic bill">${billIc(x.b.name)}</div>
           <div class="tx"><div class="t">${esc(x.b.name)}</div><div class="s"><span class="ok">✓ Paid</span> ${fmtW(x.on || x.d)} · was due ${fmtW(x.d)}</div></div></button>
           <div class="right badgestack"><span class="pill paid">Paid ✓</span>${moneyBadge(x.amount != null ? x.amount : x.b.amount, x.b.name)}</div></div>`;
       }
       const cur = x.d === x.b.due;
-      return `<div class="row bill payrow"><button class="tapzone" onclick="billForm('${x.b.id}')" aria-label="Edit ${esc(x.b.name)}"><div class="ic bill">${I(billIcon(x.b.name))}</div>
+      return `<div class="row bill payrow"><button class="tapzone" onclick="billForm('${x.b.id}')" aria-label="Edit ${esc(x.b.name)}"><div class="ic bill">${billIc(x.b.name)}</div>
         <div class="tx"><div class="t">${esc(x.b.name)}</div><div class="s">${x.late ? 'Overdue, was due ' : 'Due '}${fmtW(x.d)}</div></div></button>
         <div class="right badgestack">${pp.off <= 0 || dl <= 7 ? duePill(dl) : ''}${moneyBadge(x.b.amount, x.b.name)}${cur ? `<button class="paybtn" onclick="markPaid('${x.b.id}')">Mark paid</button>` : ''}</div></div>`;
     };
@@ -281,7 +323,7 @@ function Bills() {
       ${sorted.length ? `<div class="list">${sorted.map(row).join('')}</div>` : (hasLoanPlans && !S.bills.length ? '<div class="card muted">No other bills yet. Loan repayments are in the pay list above.</div>' : '<div class="card muted">All paid up. Good as gold!</div>')}
       ${paid.length ? `<div class="sec">Paid</div><div class="list">${paid.map(row).join('')}</div>` : ''}`
     : empty('No bills yet', 'Add your regular bills, like power, phone or insurance, and see what’s due each pay fortnight. A mortgage can go in as a repeating bill. Loan repayment plans also show here once you’ve set a payday.', 'Add a bill', 'billForm()');
-  return header('Bills', 'Regular bills, loan plans, and due dates', addBtn('Add a bill', 'billForm()')) + body;
+  return banHeader('Bills', 'Regular bills, loan plans, and due dates', addBtn('Add a bill', 'billForm()'), 'bills') + body;
 }
 async function markPaid(id) {
   const b = S.bills.find(x => x.id === id), s = snap();
@@ -559,7 +601,7 @@ function budgetCalc(b) {
 function budgetCard(b) {
   const k = budgetCalc(b);
   const billRows = k.bills.length
-    ? k.bills.map(x => `<div class="row"><button class="tapzone" onclick="${x.loanId ? `go('#loan/${x.loanId}')` : `go('#bills')`}"><div class="ic bill">${I(x.loanId ? 'coins' : billIcon(x.name))}</div><div class="tx"><div class="t">${esc(x.name)}</div><div class="s">${x.paid ? '<span class="ok">✓ Paid</span> ' + fmtW(x.paidOn || x.due) : (x.late ? 'Overdue, was due ' : 'Due ') + fmtW(x.due)}</div></div></button><b>${money(x.amount)}</b></div>`).join('')
+    ? k.bills.map(x => `<div class="row"><button class="tapzone" onclick="${x.loanId ? `go('#loan/${x.loanId}')` : `go('#bills')`}"><div class="ic bill">${billIc(x.name, x.loanId)}</div><div class="tx"><div class="t">${esc(x.name)}</div><div class="s">${x.paid ? '<span class="ok">✓ Paid</span> ' + fmtW(x.paidOn || x.due) : (x.late ? 'Overdue, was due ' : 'Due ') + fmtW(x.due)}</div></div></button><b>${money(x.amount)}</b></div>`).join('')
     : `<div class="card muted" style="margin:0">${payPeriod(0) ? 'No bills due in this fortnight.' : 'Set your payday in Bills so this fortnight’s bills can show here.'}</div>`;
   const lines = (b.lines || []).map(x => `<div class="row" data-bline="${esc(x.id)}"><div class="tx"><div class="t">${esc(x.name)}</div></div><b>${money(x.amount)}</b>
       <button type="button" class="iconbtn" aria-label="Delete ${esc(x.name)}" onclick="budgetLineDelete(${jsArg(b.id)},${jsArg(x.id)})">${I('trash')}</button></div>`).join('');
@@ -584,11 +626,11 @@ function Budget() {
   const list = [...(S.budgets || [])].sort((a, b) => (parseD(b.start) || 0) - (parseD(a.start) || 0));
   const sub = list.length ? 'One budget for each pay fortnight' : 'What’s left after pay day';
   const needPay = !payPeriod(0);
-  if (!list.length) return header('Budget', sub, addBtn('Add a budget', 'budgetForm()')) +
+  if (!list.length) return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') +
     (needPay ? `<div class="callout green">${I('cal')}<div style="flex:1"><b>Set your payday first</b><br>Budget uses the same fortnight as Bills.<div style="margin-top:10px"><button class="btn small primary" onclick="paydayForm()">Set payday</button></div></div></div>` : '') +
     empty('No budget yet', 'Add this fortnight’s pay. Bills and loan repayments due in that date range show at their real amounts.', 'Add', 'budgetForm()') +
     `<div class="foot">${savedWhere()}</div>`;
-  return header('Budget', sub, addBtn('Add a budget', 'budgetForm()')) +
+  return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') +
     `<div id="budgetlist">${list.map(budgetCard).join('')}</div>
     <div class="btns" style="margin-top:12px"><button class="btn" onclick="budgetForm()">${I('plus')} Add a budget</button></div>
     <div class="foot">${savedWhere()}</div>`;
@@ -1063,7 +1105,7 @@ function calDayPanel() {
   const list = apptsIn(calDay, calDay);
   const bills = S.bills.filter(b => MH.billDates(b, parseD(calDay), parseD(calDay)).length);
   return `<div class="sec">${esc(fmtLong(calDay))}<button onclick="apptForm(null,'${calDay}')">+ Add</button></div>
-    <div class="list" id="calday">${list.map(o => apptRow(o, false)).join('')}${bills.map(b => `<button class="row" onclick="billForm('${b.id}')"><div class="ic bill">${I(billIcon(b.name))}</div><div class="tx"><div class="t">${esc(b.name)}</div><div class="s">Bill due${b.amount ? ' · ' + money(b.amount) : ''}</div></div>${I('right')}</button>`).join('')}
+    <div class="list" id="calday">${list.map(o => apptRow(o, false)).join('')}${bills.map(b => `<button class="row" onclick="billForm('${b.id}')"><div class="ic bill">${billIc(b.name)}</div><div class="tx"><div class="t">${esc(b.name)}</div><div class="s">Bill due${b.amount ? ' · ' + money(b.amount) : ''}</div></div>${I('right')}</button>`).join('')}
     ${!list.length && !bills.length ? `<div class="row"><div class="tx"><div class="s">Nothing on this day.</div></div><button class="btn small primary" onclick="apptForm(null,'${calDay}')">Add appointment</button></div>` : ''}</div>`;
 }
 function Calendar() {
@@ -1071,7 +1113,7 @@ function Calendar() {
   const up = apptsIn(today, addDays(today, 365));
   const seen = new Set(), upcoming = up.filter(o => { if (o.a.repeat === 'none') return true; const n = seen.has(o.a.id) ? false : (seen.add(o.a.id), true); return n; });
   const past = S.appts.filter(a => a.repeat === 'none' && a.date < today).map(a => ({ a, date: a.date })).sort((x, y) => y.date.localeCompare(x.date) || (y.a.start || '').localeCompare(x.a.start || ''));
-  return header('Calendar', 'Your appointments', addBtn('Add appointment', `apptForm(null,'${calDay || today}')`)) + calGrid() + calDayPanel() +
+  return banHeader('Calendar', 'Your appointments', addBtn('Add appointment', `apptForm(null,'${calDay || today}')`), 'cal') + calGrid() + calDayPanel() +
     `<div class="sec">Coming up</div>` +
     (upcoming.length ? `<div class="list" id="apptlist">${upcoming.slice(0, 40).map(o => apptRow(o)).join('')}</div>` + (upcoming.length > 40 ? `<p class="muted">And ${upcoming.length - 40} more.</p>` : '')
       : empty('No appointments yet', 'Add doctor, dentist, school or anything else. Repeats are fine too.', 'Add appointment', `apptForm(null,'${today}')`)) +
@@ -1526,29 +1568,29 @@ function helpCard(x) {
     <div class="btns helpbtns">${calls}${links}</div></div>`;
 }
 function Help() {
-  return header('Help', 'Free and low-cost services that can help') +
+  return banHeader('Help', 'Free and low-cost services that can help', '', 'health') +
     `<div class="card helpintro">You don’t have to sort everything out on your own. These services help people every day, they’re confidential, and they won’t judge.</div>` +
     HELP.map(sec => `<div class="sec">${esc(sec.title)}</div>${sec.intro ? `<p class="muted helpsecintro">${esc(sec.intro)}</p>` : ''}${sec.items.map(helpCard).join('')}`).join('') +
     `<div class="foot">Not legal or financial advice: these services can help with your situation.<br>Phone numbers and links checked ${HELP_CHECKED}.</div>`;
 }
 
 /* ================= ROUTER ================= */
-const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['loans', 'Loans', 'coins'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
+const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['shopping', 'Shopping', 'cart'], ['loans', 'Loans', 'coins'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
 function render() {
   if (!S) return;
   const h = (location.hash || '#bills').slice(1), [r, arg] = h.split('/');
   let page = '';
   try {
-    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : Bills();
+    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : r === 'shopping' ? Shopping() : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
   $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
-  $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${I(ic)}<span>${l}</span></button>`).join('');
+  $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${artIc(TAB_ART[k], ic, 'i3 tabi3')}<span>${l}</span></button>`).join('');
 }
-window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); $('#view').scrollTop = 0; window.scrollTo(0, 0); } });
+window.addEventListener('hashchange', () => { if (/^#shopimport=/.test(location.hash || '')) { shopImportFromHash(); return; } if (!sheetOpen) { render(); $('#view').scrollTop = 0; window.scrollTo(0, 0); } });
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
 load();
-render();
+if (/^#shopimport=/.test(location.hash || '')) shopImportFromHash(); else render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
