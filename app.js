@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.6.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -845,26 +845,113 @@ async function installApp() {
 
 /* ================= THEMES (1.2.0) =================
    Her colour choice, saved on this phone only (and in the backup file). The page <head> applies it before drawing. */
+/* ================= MORE THEMES (1.6.0) =================
+   The same range as My App: the plain colours, the picture themes (Sunshine, Beach, Night sky, Bush walk),
+   ten weather themes that switch to a night version from 1 hour after sunset until 5am, and Auto (weather),
+   which follows the real weather in Onerahi (Open-Meteo, checked at most every 30 min) and goes dark at night by itself. */
+const GFX = { // key: [name, brand, bg, card, ink, sky top]
+  sun: ['Sunshine', '#B8500A', '#FFF4DA', '#FFFBF2', '#2A1C0E', '#FFE7A3'], beach: ['Beach', '#0E6E8C', '#E6F5F9', '#FFFDF7', '#122A33', '#BFE6F4'],
+  night: ['Night sky', '#A5B8FF', '#0B1438', '#141D47', '#E9ECFF', '#050A1F'], bush: ['Bush walk', '#2F6B3A', '#EAF1E4', '#FBFCF8', '#16231A', '#DCE8D2'],
+  'w-sunny': ['Sunny', '#B8500A', '#FFF4DA', '#FFFBF2', '#2A1C0E', '#FFE7A3'], 'w-hot': ['Hot day', '#B8500A', '#FFE2B8', '#FFFBF2', '#2A1C0E', '#FFC98A'],
+  'w-pc': ['Partly cloudy', '#0E6E8C', '#E6F5F9', '#FFFDF7', '#122A33', '#BFE6F4'], 'w-cloudy': ['Cloudy', '#2D5E86', '#E7ECF1', '#FCFDFE', '#17212B', '#C9D3DD'],
+  'w-drizzle': ['Drizzle', '#2D5E86', '#E3E8EE', '#FCFDFE', '#17212B', '#BCC7D2'], 'w-rain': ['Rain', '#2D5E86', '#DDE3EA', '#FCFDFE', '#17212B', '#A9B6C4'],
+  'w-heavy': ['Heavy rain', '#2D5E86', '#D3DAE2', '#FCFDFE', '#17212B', '#93A1B1'], 'w-storm': ['Storm', '#2D5E86', '#CBD2DB', '#FCFDFE', '#17212B', '#7D8A9C'],
+  'w-windy': ['Windy', '#0E6E8C', '#EAF6FA', '#FFFDF7', '#122A33', '#BFE3F2'], 'w-fog': ['Fog', '#2D5E86', '#EEF1F3', '#FCFDFE', '#17212B', '#DDE2E6']
+};
+const WXN = { clear: ['#050A1F', '#0B1438', '#141D47'], cloud: ['#0A0F22', '#121A36', '#1A2342'], storm: ['#05070F', '#0E1322', '#171D2E'], fog: ['#0E1424', '#182034', '#202A40'] };
+const MWX_KEY = 'moniquesHelper.wx', LOOK_KEY = 'moniquesHelper.themeLook';
+function mwx() { try { return JSON.parse(localStorage.getItem(MWX_KEY) || 'null'); } catch (e) { return null; } }
+async function mwxFetch(force) {
+  const c = mwx(); if (!force && c && Date.now() - c.at < 30 * 60000) return c;
+  try {
+    const r = await fetch('https://api.open-meteo.com/v1/forecast?latitude=-35.77&longitude=174.36&current=temperature_2m,weather_code,wind_speed_10m&daily=sunrise,sunset&timezone=Pacific%2FAuckland&forecast_days=1');
+    const j = await r.json(); if (!j.current) return c;
+    const o = { at: Date.now(), code: +j.current.weather_code, temp: j.current.temperature_2m, wind: j.current.wind_speed_10m, rise: String(j.daily.sunrise[0]).slice(11, 16), set: String(j.daily.sunset[0]).slice(11, 16) };
+    localStorage.setItem(MWX_KEY, JSON.stringify(o)); return o;
+  } catch (e) { return c; }
+}
+function mwxKind() {
+  const w = mwx(); if (!w) return 'sunny';
+  const code = w.code, temp = w.temp, wind = w.wind;
+  if (code >= 95) return 'storm'; if ([65, 67, 82].includes(code)) return 'heavy'; if ([61, 63, 66, 80, 81].includes(code)) return 'rain';
+  if (code >= 51 && code <= 57) return 'drizzle'; if (code === 45 || code === 48) return 'fog'; if (code >= 71) return 'cloudy';
+  if (typeof wind === 'number' && wind >= 40) return 'windy'; if (code === 3) return 'cloudy'; if (code === 2) return temp >= 27 ? 'hot' : 'pc';
+  return temp >= 25 ? 'hot' : 'sunny';
+}
+function mwxNight() {
+  const n = new Date(), m = n.getHours() * 60 + n.getMinutes(), w = mwx();
+  let set = 19 * 60 + 45; if (w && /^\d\d:\d\d$/.test(w.set)) set = +w.set.slice(0, 2) * 60 + +w.set.slice(3);
+  return m >= Math.min(set + 60, 23 * 60 + 59) || m < 5 * 60;
+}
+function mSkyArt(k, n) { // a light picture for the top of the page
+  const clear = ['sunny', 'hot', 'sun'].includes(k), cl = (x, y, s, col, o) => `<g transform="translate(${x} ${y}) scale(${s})" opacity="${o}"><ellipse rx="46" ry="20" fill="${col}"/><ellipse cx="-24" cy="-10" rx="24" ry="20" fill="${col}"/><ellipse cx="14" cy="-18" rx="30" ry="26" fill="${col}"/><ellipse cx="40" cy="-4" rx="20" ry="16" fill="${col}"/></g>`;
+  let b = '';
+  if (n) b += '<g fill="#fff">' + [[30, 20], [90, 54], [160, 16], [230, 44], [290, 80], [60, 100], [350, 30]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.3" opacity=".8"/>`).join('') + '</g>' + (['sunny', 'hot', 'pc', 'windy', 'night'].includes(k) ? '<circle cx="330" cy="46" r="20" fill="#F4EBC4"/><circle cx="340" cy="40" r="18" fill="' + WXN.clear[0] + '"/>' : '');
+  else if (clear || k === 'pc' || k === 'windy') b += '<circle cx="330" cy="40" r="80" fill="#FFE27A" opacity=".35"/><circle cx="330" cy="40" r="30" fill="#FDB022"/>';
+  const cn = { pc: 3, cloudy: 5, drizzle: 5, rain: 6, heavy: 7, storm: 7, windy: 2 }[k] || 0;
+  const col = n ? '#323B58' : k === 'pc' || k === 'windy' ? '#FFFFFF' : k === 'rain' ? '#C3CCD6' : k === 'heavy' ? '#A7B2BF' : k === 'storm' ? '#8C98A8' : '#F2F5F8';
+  for (let i = 0; i < cn; i++) b += cl((i * 97 + 30) % 400, 30 + (i * 53) % 90, .7 + (i % 3) * .25, col, .9);
+  const rain = { drizzle: [10, 1.2], rain: [18, 1.6], heavy: [26, 2], storm: [24, 2] }[k];
+  if (rain) { let l = ''; for (let i = 0; i < 40; i++) { const x = (i * 37) % 400, y = 100 + (i * 23) % 160; l += `<line x1="${x}" y1="${y}" x2="${x - 4}" y2="${y + rain[0]}"/>`; } b += `<g stroke="${n ? '#A9BCEB' : '#46617F'}" stroke-width="${rain[1]}" stroke-linecap="round" opacity=".55">${l}</g>`; }
+  if (k === 'storm') b += '<path d="M250 70l-26 52h20l-18 52 44-66h-22l18-38Z" fill="#FFE27A"/>';
+  if (k === 'windy') b += [70, 130, 190].map(y => `<path d="M20 ${y}h220q30 0 30-20" fill="none" stroke="${n ? '#B9C4E8' : '#2C6E8A'}" stroke-width="3" stroke-linecap="round" opacity=".3"/>`).join('');
+  if (k === 'fog') b += [60, 110, 160, 210].map((y, i) => `<rect x="${i % 2 ? 40 : -20}" y="${y}" width="380" height="14" rx="7" fill="${n ? '#8F9AB8' : '#FFFFFF'}" opacity="${n ? .3 : .7}"/>`).join('');
+  if (k === 'beach' && !n) b += '<path d="M0 230q50-12 100 0t100 0t100 0t100 0V300H0Z" fill="#47AFD0" opacity=".5"/><path d="M0 262q50-8 100 0t100 0t100 0t100 0V300H0Z" fill="#F3DDAF" opacity=".7"/>';
+  if (k === 'bush' && !n) b += '<path d="M0 240Q90 200 190 230T400 220V300H0Z" fill="#4B7E45" opacity=".35"/><path d="M0 270Q120 240 250 265T400 258V300H0Z" fill="#2E5530" opacity=".35"/>';
+  if (k === 'hot' && !n) b += '<path d="M0 260Q100 240 200 255T400 250V300H0Z" fill="#F59E42" opacity=".35"/>';
+  return "url('data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMin slice">${b}</svg>`).replace(/'/g, '%27') + "')";
+}
+function mLook(t, day) { // what the theme looks like right now
+  if (!GFX[t] && t !== 'auto') return { dt: t, vars: null };
+  let k, n;
+  if (t === 'auto') { k = mwxKind(); n = mwxNight(); }
+  else if (/^w-/.test(t)) { k = t.slice(2); n = !day && mwxNight(); }
+  else { k = t; n = t === 'night'; }
+  const row = GFX['w-' + k] || GFX[k] || GFX.sun;
+  if (n) {
+    const c = WXN[k === 'storm' || k === 'heavy' ? 'storm' : k === 'fog' ? 'fog' : ['sunny', 'hot', 'windy', 'night', 'sun', 'beach', 'pc'].includes(k) ? 'clear' : 'cloud'];
+    return { dt: 'dark', k, n, vars: { '--bg': c[1], '--card': c[2], '--brand': '#A5B8FF', '--brand2': '#1E2A5E', '--branddk': '#8FA3F5', '--onbrand': '#0B1438', '--greet': '#CDD6FF', '--ink': '#E9ECFF', '--sky': `${mSkyArt(k, true)} top center/100% auto no-repeat, linear-gradient(180deg,${c[0]} 0%,${c[1]} 40%,${c[1]} 100%)`, '--tc': c[0] } };
+  }
+  return { dt: 'purple', k, n, vars: { '--bg': row[2], '--card': row[3], '--ink': row[4], '--brand': row[1], '--brand2': row[2], '--branddk': row[1], '--greet': row[1], '--focus': row[1] + '33', '--sky': `${mSkyArt(k, false)} top center/100% auto no-repeat, linear-gradient(180deg,${row[5]} 0%,${row[2]} 45%,${row[2]} 100%)`, '--tc': row[1] } };
+}
 const THEMES = [['purple', 'Purple', '#6D3FC4'], ['pink', 'Pink', '#C2185B'], ['ocean', 'Ocean blue', '#1565C0'], ['teal', 'Sea green', '#0F766E'],
-  ['coral', 'Sunset coral', '#C2410C'], ['forest', 'Forest green', '#2E7D32'], ['lavender', 'Lavender', '#8A4FA8'], ['dark', 'Dark', '#121019']];
+  ['coral', 'Sunset coral', '#C2410C'], ['forest', 'Forest green', '#2E7D32'], ['lavender', 'Lavender', '#8A4FA8'], ['dark', 'Dark', '#121019'],
+  ['sun', 'Sunshine', '#B8500A'], ['beach', 'Beach', '#0E6E8C'], ['night', 'Night sky', '#0B1438'], ['bush', 'Bush walk', '#2F6B3A'], ['auto', 'Auto (weather)', '#0E6E8C'],
+  ...Object.keys(GFX).filter(k => /^w-/.test(k)).map(k => [k, GFX[k][0], GFX[k][1]])];
 const THEME_KEY = 'moniquesHelper.theme';
 const themeOk = t => THEMES.some(x => x[0] === t);
 function curTheme() { try { const t = localStorage.getItem(THEME_KEY); return themeOk(t) ? t : 'purple'; } catch (e) { return 'purple'; } }
 function applyTheme(t) {
   if (!themeOk(t)) t = 'purple';
-  document.documentElement.setAttribute('data-theme', t);
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', THEMES.find(x => x[0] === t)[2]);
+  const L = mLook(t), de = document.documentElement, old = de.dataset.vars ? de.dataset.vars.split(',') : [];
+  old.forEach(v => de.style.removeProperty(v)); de.dataset.vars = '';
+  de.setAttribute('data-theme', L.dt); de.classList.toggle('gfx', !!L.vars);
+  if (L.vars) { Object.entries(L.vars).forEach(([a, b]) => { if (a !== '--tc') de.style.setProperty(a, b); }); de.dataset.vars = Object.keys(L.vars).join(','); }
+  const tc = L.vars ? L.vars['--tc'] : THEMES.find(x => x[0] === t)[2];
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.setAttribute('content', tc);
+  try { localStorage.setItem(LOOK_KEY, JSON.stringify({ dt: L.dt, vars: L.vars || null, tc })); } catch (e) { }
+}
+function themeSw(k, n, col) {
+  let bg = k === 'dark' ? 'linear-gradient(135deg,#121019 50%,#B79CFF 50%)' : col;
+  if (GFX[k] || k === 'auto') { const L = mLook(k === 'auto' ? 'w-sunny' : k, true); bg = L.vars['--sky'].replace('top center/100% auto no-repeat', 'center/cover no-repeat'); if (k === 'auto') bg = 'conic-gradient(#FDB022 0 25%,#BFE6F4 0 50%,#0B1438 0 75%,#A9B6C4 0)'; }
+  return bg;
 }
 function themeGrid() {
-  const c = curTheme();
-  return `<div class="themegrid">${THEMES.map(([k, n, col]) => `<button type="button" class="tswatch ${k === c ? 'on' : ''}" data-theme-pick="${k}" aria-pressed="${k === c}" onclick="setTheme('${k}')"><i style="background:${k === 'dark' ? 'linear-gradient(135deg,#121019 50%,#B79CFF 50%)' : col}"></i>${esc(n)}</button>`).join('')}</div>`;
+  const c = curTheme(), btn = ([k, n, col]) => `<button type="button" class="tswatch ${k === c ? 'on' : ''}" data-theme-pick="${k}" aria-pressed="${k === c}" onclick="setTheme('${k}')"><i style="background:${themeSw(k, n, col)}"></i>${esc(n)}</button>`;
+  const autoNote = c === 'auto' ? (() => { const w = mwx(); return `<p class="muted" style="margin:8px 2px 0">Auto now: ${esc((GFX['w-' + mwxKind()] || ['Sunny'])[0])}${mwxNight() ? ' (night)' : ''}${w ? ', ' + Math.round(w.temp) + '° in Onerahi' : ''}.</p>`; })() : '';
+  return `<div class="themegrid">${THEMES.filter(x => !/^w-/.test(x[0])).map(btn).join('')}</div><div class="mptitle" style="margin-top:12px">Weather themes <span class="muted" style="font-weight:500">· go dark after sunset</span></div><div class="themegrid">${THEMES.filter(x => /^w-/.test(x[0])).map(btn).join('')}</div>${autoNote}`;
 }
 function setTheme(t) {
   if (!themeOk(t)) return;
   try { localStorage.setItem(THEME_KEY, t); } catch (e) { }
   applyTheme(t);
   document.querySelectorAll('.tswatch').forEach(b => { const on = b.dataset.themePick === t; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+  if (t === 'auto' || /^w-/.test(t)) mwxFetch().then(() => { if (curTheme() === t) applyTheme(t); });
 }
+function themeTick() { const t = curTheme(); if (t === 'auto' || /^w-/.test(t)) { applyTheme(t); if (t === 'auto') mwxFetch().then(() => applyTheme(curTheme())); } }
+setInterval(themeTick, 5 * 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) themeTick(); });
+try { applyTheme(curTheme()); themeTick(); } catch (e) { }
 function themeSheet() { openSheet('Choose a theme', themeGrid() + mascotPicker() + '<p class="muted" style="margin:14px 2px 0">Tap a colour to try it. It’s saved on this phone.</p>', null); }
 const themeCard = () => `<div class="sec">Theme</div><div class="card" id="themecard">${themeGrid()}${mascotPicker()}</div>`;
 

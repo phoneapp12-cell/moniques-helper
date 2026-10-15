@@ -6,9 +6,10 @@
 <title>Monique's Helper</title>
 <meta name="description" content="Bills, pay, budget and loan repayments by fortnight. Everything stays on your phone.">
 <meta name="theme-color" content="#6D3FC4">
-<script>/* 1.2.0: her chosen theme, applied before anything is drawn */
-try { var t = localStorage.getItem('moniquesHelper.theme'), c = { purple: '#6D3FC4', pink: '#C2185B', ocean: '#1565C0', teal: '#0F766E', coral: '#C2410C', forest: '#2E7D32', lavender: '#8A4FA8', dark: '#121019' };
-  if (t && c[t]) { document.documentElement.setAttribute('data-theme', t); document.querySelector('meta[name=theme-color]').setAttribute('content', c[t]); } } catch (e) { }</script>
+<script>/* 1.2.0 + 1.6.0: her chosen theme (and the weather look), applied before anything is drawn */
+try { var t = localStorage.getItem('moniquesHelper.theme'), c = { purple: '#6D3FC4', pink: '#C2185B', ocean: '#1565C0', teal: '#0F766E', coral: '#C2410C', forest: '#2E7D32', lavender: '#8A4FA8', dark: '#121019' }, de = document.documentElement;
+  if (t && c[t]) { de.setAttribute('data-theme', t); document.querySelector('meta[name=theme-color]').setAttribute('content', c[t]); }
+  else if (t) { var L = JSON.parse(localStorage.getItem('moniquesHelper.themeLook') || 'null'); if (L && L.vars) { de.setAttribute('data-theme', L.dt); de.classList.add('gfx'); for (var v in L.vars) if (v !== '--tc') de.style.setProperty(v, L.vars[v]); de.dataset.vars = Object.keys(L.vars).join(','); document.querySelector('meta[name=theme-color]').setAttribute('content', L.tc); } } } catch (e) { }</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -437,6 +438,8 @@ html[data-theme="dark"] .hcat .cz{fill:#B9B3E8}
 .hcat.purring svg{animation:cpurr .09s linear 16}
 @keyframes cbob{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-4px) rotate(2deg)}}
 @media (prefers-reduced-motion:reduce){.hcat.purring svg{animation-iteration-count:4}}
+html.gfx #app{background:var(--sky,var(--bg))}
+html.gfx .themegrid .tswatch i{background-size:cover}
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap">
 <style>
