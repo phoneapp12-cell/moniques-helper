@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.7.1';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -54,7 +54,7 @@ function normalise(d) {
   d.loans = normLoans(d.loans);
   d.budgets = normBudgets(d.budgets);
   d.appts = normAppts(d.appts);
-  d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: x.from === 'shane' ? 'shane' : '' }));
+  d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: '' }));
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
   d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [] };
   d.version = 1;
@@ -95,10 +95,10 @@ function banHeader(title, sub, extra, k) {
   } catch (e) { return header(title, sub, extra); }
 }
 
-/* 1.7.0: simple shopping list. Shane can send a one-time copy of his list with a link (#shopimport=…); nothing syncs. */
+/* 1.7.0: simple shopping list, kept on this phone only. */
 function Shopping() {
   const left = S.shop.filter(x => !x.done), got = S.shop.filter(x => x.done);
-  const row = x => `<div class="row shoprow${x.done ? ' done' : ''}"><button class="shoptick${x.done ? ' on' : ''}" aria-label="${x.done ? 'Not got' : 'Got'} ${esc(x.name)}" onclick="shopTick('${x.id}')">${x.done ? I('check') : ''}</button><div class="tx"><div class="t">${esc(x.name)}${x.qty ? ` <span class="shopqty">${esc(x.qty)}</span>` : ''}</div>${x.from === 'shane' ? '<div class="s">From Shane’s list</div>' : ''}</div><button class="iconbtn small" aria-label="Delete ${esc(x.name)}" onclick="shopDel('${x.id}')">${I('trash')}</button></div>`;
+  const row = x => `<div class="row shoprow${x.done ? ' done' : ''}"><button class="shoptick${x.done ? ' on' : ''}" aria-label="${x.done ? 'Not got' : 'Got'} ${esc(x.name)}" onclick="shopTick('${x.id}')">${x.done ? I('check') : ''}</button><div class="tx"><div class="t">${esc(x.name)}${x.qty ? ` <span class="shopqty">${esc(x.qty)}</span>` : ''}</div></div><button class="iconbtn small" aria-label="Delete ${esc(x.name)}" onclick="shopDel('${x.id}')">${I('trash')}</button></div>`;
   return banHeader('Shopping', left.length ? plural(left.length, 'thing') + ' to get' : 'Nothing to get', '', 'shopping') +
     `<form class="shopadd" onsubmit="event.preventDefault();shopAdd()"><input id="shopin" type="text" maxlength="80" placeholder="Add something…" autocomplete="off" aria-label="Add to shopping list"><button class="btn primary" type="submit" aria-label="Add">${I('plus')}</button></form>` +
     (S.shop.length ? `<div class="card list">${left.map(row).join('')}${got.length ? `<div class="shopgot">Got (${got.length}) <button class="linkbtn" onclick="shopClear()">Clear</button></div>` + got.map(row).join('') : ''}</div>` : empty('Your shopping list is empty', 'Type above to add something.'));
@@ -107,20 +107,6 @@ async function shopAdd() { const el = $('#shopin'); const v = el && el.value.tri
 async function shopTick(id) { const x = S.shop.find(y => y.id === id); if (!x) return; x.done = !x.done; await save(); render(); }
 async function shopDel(id) { const s0 = snap(), x = S.shop.find(y => y.id === id); S.shop = S.shop.filter(y => y.id !== id); await save(); render(); if (x) toast('Deleted ' + x.name, 'Undo', undoTo(s0)); }
 async function shopClear() { const s0 = snap(); S.shop = S.shop.filter(y => !y.done); await save(); render(); toast('Cleared ticked items', 'Undo', undoTo(s0)); }
-async function shopImportFromHash() {
-  try {
-    const m = /^#shopimport=([\w-]+)/.exec(location.hash || ''); if (!m || !S) return;
-    let b = m[1].replace(/-/g, '+').replace(/_/g, '/'); while (b.length % 4) b += '=';
-    const data = JSON.parse(decodeURIComponent(escape(atob(b))));
-    const items = (Array.isArray(data && data.i) ? data.i : []).slice(0, 200);
-    const have = new Set(S.shop.filter(x => !x.done).map(x => x.name.trim().toLowerCase()));
-    let n = 0;
-    items.forEach(it => { const name = String((it && it.n) || '').trim().slice(0, 80); if (!name || have.has(name.toLowerCase())) return; have.add(name.toLowerCase()); S.shop.push({ id: uid('s'), name, qty: String((it && it.q) || '').slice(0, 20), done: false, from: 'shane' }); n++; });
-    if (n) await save();
-    history.replaceState(null, '', location.pathname + '#shopping'); render();
-    toast(n ? 'Added ' + plural(n, 'item') + ' from Shane’s shopping list' : 'Those items are already on your list');
-  } catch (e) { try { history.replaceState(null, '', location.pathname + '#shopping'); render(); toast('Sorry, that shopping link didn’t work.'); } catch (x) { } }
-}
 
 /* ---------- small UI helpers ---------- */
 function dueTone(d) { return d <= 2 ? 'hot' : d <= 5 ? 'warm' : 'cool'; }
@@ -1587,10 +1573,10 @@ function render() {
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
   $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${artIc(TAB_ART[k], ic, 'i3 tabi3')}<span>${l}</span></button>`).join('');
 }
-window.addEventListener('hashchange', () => { if (/^#shopimport=/.test(location.hash || '')) { shopImportFromHash(); return; } if (!sheetOpen) { render(); $('#view').scrollTop = 0; window.scrollTo(0, 0); } });
+window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); $('#view').scrollTop = 0; window.scrollTo(0, 0); } });
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
 load();
-if (/^#shopimport=/.test(location.hash || '')) shopImportFromHash(); else render();
+render();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
