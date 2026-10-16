@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -13,6 +13,7 @@ const P = {
   cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
   cash: '<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6 9.5v5M18 9.5v5"/>',
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2.5 3.5h3l2.4 11.5h11l2-8H7"/>',
+  tarot: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 8l1.2 2.6 2.8.3-2.1 1.9.6 2.8-2.5-1.5-2.5 1.5.6-2.8-2.1-1.9 2.8-.3z"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   coins: '<ellipse cx="9" cy="6.5" rx="6" ry="2.5"/><path d="M3 6.5v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4"/><path d="M15 10.5c3.3 0 6 1.1 6 2.5s-2.7 2.5-6 2.5-6-1.1-6-2.5"/><path d="M9 13v4c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-4"/>',
   download: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>',
@@ -54,6 +55,7 @@ function normalise(d) {
   d.loans = normLoans(d.loans);
   d.budgets = normBudgets(d.budgets);
   d.appts = normAppts(d.appts);
+  d.tarot = { learned: [...new Set((d.tarot && Array.isArray(d.tarot.learned) ? d.tarot.learned : []).map(Number).filter(n => Number.isInteger(n) && n >= 0 && n < 78))] };
   d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: '', pr: cleanPr(x.pr), prNone: Number(x.prNone) || 0 }));
   d.shopPast = (Array.isArray(d.shopPast) ? d.shopPast : []).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 150);
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
@@ -148,6 +150,70 @@ async function shopAdd() { const el = $('#shopin'); const v = el && el.value.tri
 async function shopTick(id) { const x = S.shop.find(y => y.id === id); if (!x) return; x.done = !x.done; await save(); render(); }
 async function shopDel(id) { const s0 = snap(), x = S.shop.find(y => y.id === id); S.shop = S.shop.filter(y => y.id !== id); await save(); render(); if (x) toast('Deleted ' + x.name, 'Undo', undoTo(s0)); }
 async function shopClear() { const s0 = snap(); S.shop = S.shop.filter(y => !y.done); await save(); render(); toast('Cleared ticked items', 'Undo', undoTo(s0)); }
+
+/* 1.10.0: Tarot – learn one Rider-Waite-Smith card a day. Card data is in tarot.js (offline). For learning and
+   reflection only: traditional meanings, no predictions. Card of the day walks through all 78 in a shuffled order
+   (the same for everyone on that date) before any card repeats. */
+const TSUIT = { major: ['Major Arcana', '#4c1d95', '#7c3aed'], wands: ['Wands', '#9a3412', '#f97316'], cups: ['Cups', '#1e3a8a', '#3b82f6'], swords: ['Swords', '#334155', '#94a3b8'], pentacles: ['Pentacles', '#14532d', '#22c55e'] };
+const TSYM = {
+  major: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9"/><path d="M24 4v6M24 38v6M4 24h6M38 24h6M10 10l4 4M34 34l4 4M38 10l-4 4M14 34l-4 4"/></svg>',
+  wands: '<svg viewBox="0 0 48 48"><path d="M16 44L32 6"/><path d="M27 15c3-1 5 0 6 2M24 22c-3-1-5 0-6 2M29 11c1-3 3-4 5-4"/></svg>',
+  cups: '<svg viewBox="0 0 48 48"><path d="M12 8h24c0 12-5 18-12 18S12 20 12 8z"/><path d="M24 26v10M16 42h16M18 36h12"/></svg>',
+  swords: '<svg viewBox="0 0 48 48"><path d="M24 4v30M16 34h16M24 34v10M21 44h6"/><path d="M24 4l-3 5v25M24 4l3 5v25"/></svg>',
+  pentacles: '<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="18"/><path d="M24 9l4.4 13.6H43L31.3 31l4.4 13.6L24 36.2 12.3 44.6 16.7 31 5 22.6h14.6z" transform="translate(24 24) scale(.62) translate(-24 -26)"/></svg>'
+};
+const ROMAN = ['0', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII', 'XVIII', 'XIX', 'XX', 'XXI'];
+const COURT = { 1: 'Ace', 11: 'Page', 12: 'Knight', 13: 'Queen', 14: 'King' };
+const tarotList = () => (typeof TAROT !== 'undefined' && Array.isArray(TAROT) ? TAROT : []);
+function tarotCard(i) { const c = tarotList()[i]; if (!c) return null; const [name, suit, num, kw, up, rev, note] = c; return { i, name, suit, num, kw, up, rev, note }; }
+function tarotNumLabel(c) { return c.suit === 'major' ? ROMAN[c.num] || String(c.num) : (COURT[c.num] || String(c.num)); }
+// Shuffled order for each 78-day cycle (seeded by the cycle number), so no card repeats inside a cycle.
+function tarotOrder(cycle) {
+  const a = [...Array(78).keys()]; let x = (cycle * 2654435761 + 12345) >>> 0;
+  const rnd = () => { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function tarotDayIndex(iso = todayISO()) {
+  const d = Math.floor((parseD(iso) - parseD('2026-01-01')) / DAY), n = ((d % 78) + 78) % 78, cyc = Math.floor(d / 78);
+  return tarotOrder(cyc)[n];
+}
+function tarotFace(c, cls = '') {
+  const t = TSUIT[c.suit] || TSUIT.major;
+  return `<div class="tcard ${cls}" style="--tc1:${t[1]};--tc2:${t[2]}" aria-hidden="true"><div class="tnum">${esc(tarotNumLabel(c))}</div><div class="tsym">${TSYM[c.suit] || TSYM.major}</div><div class="tname">${esc(c.name)}</div></div>`;
+}
+const tarotLearned = i => !!(S.tarot && S.tarot.learned.includes(i));
+async function tarotToggle(i) { if (!S.tarot) S.tarot = { learned: [] }; const L = S.tarot.learned; const k = L.indexOf(i); if (k >= 0) L.splice(k, 1); else L.push(i); await save(); render(); }
+let tarotFilter = 'all';
+function tarotDetail(c, today) {
+  return `<div class="card tdcard"><div class="tday">${tarotFace(c)}<div class="tx"><div class="tsuit">${today ? 'Card of the day · ' : ''}${esc((TSUIT[c.suit] || TSUIT.major)[0])}${c.suit === 'major' ? ' ' + esc(tarotNumLabel(c)) : ''}</div><h2 style="margin:2px 0 4px">${esc(c.name)}</h2><div class="tkw">${c.kw.split(',').map(k => `<span>${esc(k.trim())}</span>`).join('')}</div></div></div>
+    <div class="tsec">Upright</div><div>${esc(c.up)}</div>
+    <div class="tsec">Reversed</div><div>${esc(c.rev)}</div>
+    <div class="tsec">Symbols to notice</div><div>${esc(c.note)}</div>
+    <div class="btns" style="margin-top:12px"><button class="btn ${tarotLearned(c.i) ? '' : 'primary'}" onclick="tarotToggle(${c.i})">${I('check')} ${tarotLearned(c.i) ? 'Learned ✓ (tap to undo)' : 'Mark as learned'}</button></div></div>`;
+}
+function Tarot(arg) {
+  const list = tarotList();
+  if (list.length !== 78) return banHeader('Tarot', 'Learn a card a day', '', 'health') + empty('Tarot cards didn’t load', 'Please reload the app.');
+  const learned = S.tarot.learned.length, pct = Math.round(learned / 78 * 100);
+  const sel0 = arg != null && arg !== '' && tarotCard(+arg) ? tarotCard(+arg) : null;
+  const day = tarotCard(tarotDayIndex());
+  const head = header('Tarot', `Learn one card a day · ${learned} of 78 learned`);
+  if (sel0) return `<button class="back" onclick="go('#tarot')">${I('left')} All cards</button>` + head + tarotDetail(sel0, sel0.i === day.i);
+  const rows = list.map((_, i) => tarotCard(i)).filter(c => tarotFilter === 'all' || c.suit === tarotFilter);
+  const chip = (k, l) => `<button type="button" class="chip${tarotFilter === k ? ' on' : ''}" onclick="tarotFilter='${k}';render()">${l}</button>`;
+  return head + tarotDetail(day, true) +
+    `<div class="card"><b>${learned} of 78 learned</b><div class="tprog"><i style="width:${pct}%"></i></div><div class="muted" style="font-size:.85rem">Tick a card when you feel you know it. A new card comes each day.</div></div>
+    <div class="chips" style="margin:10px 0">${chip('all', 'All')}${chip('major', 'Major')}${chip('wands', 'Wands')}${chip('cups', 'Cups')}${chip('swords', 'Swords')}${chip('pentacles', 'Pentacles')}</div>
+    <div class="card list">${rows.map(c => `<button class="trow" onclick="go('#tarot/${c.i}')">${tarotFace(c, 'sm')}<div class="tx"><div class="t">${esc(c.name)}${c.i === day.i ? ' <span class="pill">Today</span>' : ''}</div><div class="s">${esc(c.kw)}</div></div>${tarotLearned(c.i) ? '<span class="ok">✓</span>' : ''}</button>`).join('')}</div>
+    <div class="foot">The 78 Rider-Waite-Smith cards with their traditional meanings, for learning and reflection. Card designs are simple drawings made for this app.</div>`;
+}
+function tarotTeaser() {
+  try {
+    const c = tarotCard(tarotDayIndex()); if (!c) return '';
+    return `<div class="card"><button class="tteaser" onclick="go('#tarot')">${tarotFace(c, 'sm')}<div style="flex:1;min-width:0"><div class="tsuit">Card of the day</div><b>${esc(c.name)}</b><div class="muted" style="font-size:.85rem">${esc(c.kw)}</div></div>${I('right')}</button></div>`;
+  } catch (e) { return ''; }
+}
 
 /* ---------- small UI helpers ---------- */
 function dueTone(d) { return d <= 2 ? 'hot' : d <= 5 ? 'warm' : 'cool'; }
@@ -1703,15 +1769,15 @@ function Help() {
 }
 
 /* ================= ROUTER ================= */
-const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['shopping', 'Shopping', 'cart'], ['loans', 'Loans', 'coins'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
+const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['shopping', 'Shopping', 'cart'], ['loans', 'Loans', 'coins'], ['tarot', 'Tarot', 'tarot'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
 function render() {
   if (!S) return;
   const h = (location.hash || '#bills').slice(1), [r, arg] = h.split('/');
   let page = '';
   try {
-    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : r === 'shopping' ? Shopping() : Bills();
+    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : r === 'shopping' ? Shopping() : r === 'tarot' ? Tarot(arg) : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
-  $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() : '') + page;
+  $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() + tarotTeaser() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
   $('#mhtabs').innerHTML = TABS.map(([k, l, ic]) => `<button class="${k === active ? 'on' : ''}" ${k === active ? 'aria-current="page"' : ''} onclick="go('#${k}')">${artIc(TAB_ART[k], ic, 'i3 tabi3')}<span>${l}</span></button>`).join('');
 }

@@ -476,6 +476,24 @@ html body .top.banhead:not(.banfail) .bantx :is(h1,.sub){color:#fff!important;-w
 .shopspec{background:#fde68a;color:#713f12;border-radius:6px;padding:0 5px;font-weight:700;font-size:.72rem}
 .shoptot{padding:12px 14px;margin-bottom:12px}
 .shoptot .s{font-size:.8rem;color:var(--ink3);margin-top:2px}
+.tcard{position:relative;width:150px;flex:none;aspect-ratio:7/12;border-radius:14px;padding:8px;color:#fff;background:linear-gradient(160deg,var(--tc1),var(--tc2));box-shadow:0 8px 20px rgba(20,10,60,.28);overflow:hidden}
+.tcard::before{content:"";position:absolute;inset:6px;border:1.5px solid rgba(255,255,255,.55);border-radius:10px;pointer-events:none}
+.tcard .tnum{position:absolute;top:12px;left:0;right:0;text-align:center;font-weight:800;letter-spacing:.08em;font-size:.95rem;opacity:.95}
+.tcard .tsym{position:absolute;top:50%;left:50%;transform:translate(-50%,-55%);width:62%;opacity:.95}
+.tcard .tsym svg{width:100%;height:auto;display:block;fill:none;stroke:#fff;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.tcard .tname{position:absolute;bottom:12px;left:8px;right:8px;text-align:center;font-weight:800;font-size:.8rem;line-height:1.15;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.tcard.rev .tsym{transform:translate(-50%,-45%) rotate(180deg)}
+.tcard.sm{width:46px;padding:0;border-radius:7px}.tcard.sm::before{inset:3px;border-radius:5px}.tcard.sm .tnum,.tcard.sm .tname{display:none}.tcard.sm .tsym{width:70%}
+.tday{display:flex;gap:14px;align-items:flex-start}
+.tday .tx{flex:1;min-width:0}
+.tkw{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.tkw span{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--brand2);color:var(--brand)}
+.tsec{font-weight:800;margin:10px 0 2px;font-size:.9rem}
+.tprog{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0 2px}.tprog i{display:block;height:100%;background:var(--brand)}
+.trow{display:flex;gap:10px;align-items:center;padding:8px 12px;width:100%;background:none;border:0;font:inherit;text-align:left;color:inherit;cursor:pointer}
+.trow .tx{flex:1;min-width:0}.trow .t{font-weight:700}.trow .s{font-size:.8rem;color:var(--ink3)}.trow .ok{color:var(--brand);font-weight:800}
+.tteaser{display:flex;gap:12px;align-items:center;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.tsuit{font-size:.78rem;color:var(--ink3);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
 </style>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap">
 <style>
@@ -506,6 +524,7 @@ setTimeout(end,5500)})();</script>
 <div id="sheet"></div>
 <div id="toast" role="status" aria-live="polite"><span id="toastmsg"></span><button id="toastbtn"></button></div>
 <script src="core.js"></script>
+<script src="tarot.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
