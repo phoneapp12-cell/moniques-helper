@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -57,7 +57,7 @@ function normalise(d) {
   d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: '', pr: cleanPr(x.pr), prNone: Number(x.prNone) || 0 }));
   d.shopPast = (Array.isArray(d.shopPast) ? d.shopPast : []).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 150);
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
-  d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [] };
+  d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [], incomes: normIncomes(st.incomes, st.payday), budgetPeriod: ['weekly', 'fortnightly', 'monthly'].includes(st.budgetPeriod) ? st.budgetPeriod : 'fortnightly' };
   d.version = 1;
   return d;
 }
@@ -240,8 +240,33 @@ function wireSeg(name, onPick) {
 const BILL_PER_YEAR = { weekly: 52, fortnightly: 26, monthly: 12, quarterly: 4, yearly: 1 };
 let payOff = 0;
 const payEvent = () => null;
+/* 1.9.0: several pay sources, each weekly, fortnightly or monthly. S.settings.incomes = [{ id, name, amount, next, freq }].
+   The first one drives the Bills pay-period view (as the single payday did). An older single payday becomes "Main pay". */
+const PAY_FREQ = { weekly: 'Weekly', fortnightly: 'Fortnightly', monthly: 'Monthly' };
+const PER_YEAR = { weekly: 52, fortnightly: 26, monthly: 12 };
+function normIncomes(list, oldPayday) {
+  let out = (Array.isArray(list) ? list : []).filter(x => x && typeof x === 'object' && x.next && parseD(x.next) != null).map((x, i) => ({
+    id: String(x.id || ('inc' + i)), name: String(x.name || 'Pay').slice(0, 40) || 'Pay', amount: Number(x.amount) > 0 ? Math.min(Math.round(Number(x.amount) * 100) / 100, 1000000) : 0,
+    next: x.next, freq: PAY_FREQ[x.freq] ? x.freq : 'fortnightly' })).slice(0, 8);
+  if (!out.length && oldPayday && parseD(oldPayday) != null) out = [{ id: 'inc-main', name: 'Main pay', amount: 0, next: oldPayday, freq: 'fortnightly' }];
+  return out;
+}
+const incomes = () => { try { return (S.settings && Array.isArray(S.settings.incomes)) ? S.settings.incomes : []; } catch (e) { return []; } };
+// Pay dates for one income between two times (works back from its next pay date).
+function incomeDates(inc, fromT, toT) {
+  try {
+    const a = parseD(inc.next); if (a == null) return [];
+    let start;
+    if (inc.freq === 'monthly') { const back = Math.max(0, Math.ceil((a - fromT) / (28 * DAY)) + 1); start = addMonths(inc.next, -back); }
+    else { const st = inc.freq === 'weekly' ? 7 : 14, k = Math.max(0, Math.ceil((a - fromT) / (st * DAY))); start = isoT(a - k * st * DAY); }
+    return repeatDates({ start, repeat: inc.freq === 'monthly' ? 'monthly' : inc.freq }, fromT, toT).map(x => x.date);
+  } catch (e) { return []; }
+}
+function payPerPeriod(amount, freq, period) { return (Number(amount) || 0) * (PER_YEAR[freq] || BILL_PER_YEAR[freq] || 0) / PER_YEAR[period]; }
 function paydays() {
   const T = todayT(), from = T - 420 * DAY, to = T + 420 * DAY;
+  const inc0 = incomes()[0];
+  if (inc0) { const ds = incomeDates(inc0, from, to); if (ds.length >= 2) { if (ds[0] > todayISO()) ds.unshift(addDays(ds[0], inc0.freq === 'weekly' ? -7 : inc0.freq === 'monthly' ? -30 : -14)); return ds; } }
   let ev = null;
   if (S.settings.payday && parseD(S.settings.payday) != null) { const a = parseD(S.settings.payday), k = Math.ceil((a - from) / (14 * DAY)); ev = { start: isoT(a - k * 14 * DAY), repeat: 'fortnightly' }; }
   else ev = payEvent();
@@ -259,16 +284,91 @@ function payPeriod(off) {
 }
 const payLabel = o => o === 0 ? 'This pay' : o === 1 ? 'Next pay' : o === -1 ? 'Last pay' : o > 1 ? `In ${o} pays` : `${-o} pays ago`;
 async function payShift(n) { payOff += n; render(); }
-function paydayForm() {
-  const ds = paydays(), T = todayISO(), nxt = ds ? (ds.find(d => d > T) || T) : T;
-  openSheet('Your payday',
-    `<p class="muted" style="margin:0 0 12px">You’re paid every fortnight. Pick your next payday and Bills will show what’s due from each payday up to the next one.</p>` +
-    field('Next payday', inp('payday', nxt, 'type="date" required')),
-    async v => {
-      if (!parseD(v.payday)) return 'Please choose your next payday.';
-      S.settings.payday = v.payday; payOff = 0; await save(); render(); toast('Payday saved.');
-    }, 'Save');
+function paydayForm() { paydaysSheet(); }
+function paydaysSheet() {
+  const list = incomes();
+  const rows = list.map((x, i) => `<div class="row"><div class="tx"><div class="t">${esc(x.name)}${i === 0 ? ' <span class="pill">Bills pay view</span>' : ''}</div><div class="s">${PAY_FREQ[x.freq]} · next ${fmtW(nextPayOf(x))}${x.amount ? ' · ' + money(x.amount) : ''}</div></div><button type="button" class="iconbtn" aria-label="Edit ${esc(x.name)}" onclick="closeSheet();setTimeout(()=>incomeForm(${jsArg(x.id)}),350)">${I('pen')}</button></div>`).join('');
+  openSheet('Your paydays',
+    `<p class="muted" style="margin:0 0 12px">Add each pay you get, with how often it comes. The first one sets the pay periods in Bills; Budget uses all of them.</p>` +
+    (rows ? `<div class="list">${rows}</div>` : '<p class="muted">No paydays yet.</p>'),
+    async () => { setTimeout(() => incomeForm(), 350); }, 'Add a payday');
 }
+function nextPayOf(inc) { const T = todayT(); const ds = incomeDates(inc, T, T + 70 * DAY); return ds[0] || inc.next; }
+function incomeForm(id) {
+  const list = incomes(), x = id ? list.find(i => i.id === id) : null;
+  if (id && !x) return;
+  const cur = x || { name: list.length ? '' : 'Main pay', amount: 0, next: todayISO(), freq: 'fortnightly' };
+  openSheet(x ? 'Edit payday' : 'Add a payday',
+    field('Name', inp('iname', cur.name, 'maxlength="40" placeholder="Like Work, Benefit, Second job" required')) +
+    field('How often', sel('ifreq', Object.entries(PAY_FREQ), cur.freq)) +
+    field('Next pay date', inp('inext', x ? nextPayOf(x) : cur.next, 'type="date" required')) +
+    moneyField('Amount (optional)', 'iamt', Math.round((cur.amount || 0) * 100), '0.00', 'Leave blank if it changes. Budget can still show bills for each payday.') +
+    (x && list.length > 1 && list[0].id !== x.id ? `<label class="field"><span><input type="checkbox" name="iprimary"> Use this one for the Bills pay view</span></label>` : ''),
+    async v => {
+      const name = String(v.iname || '').trim().slice(0, 40); if (!name) return 'Please give this pay a name.';
+      if (!parseD(v.inext)) return 'Please choose the next pay date.';
+      const c = String(v.iamt || '').trim() ? parseCents(v.iamt) : 0;
+      if (c == null || c < 0) return 'Please check the amount, like 950 or 1200.50.';
+      const s0 = snap(), rec = { id: x ? x.id : uid('inc'), name, amount: Math.min(c, MAX_CENTS) / 100, next: v.inext, freq: PAY_FREQ[v.ifreq] ? v.ifreq : 'fortnightly' };
+      let L = incomes().filter(i => i.id !== rec.id);
+      if (x) { const idx = incomes().findIndex(i => i.id === x.id); L.splice(v.iprimary ? 0 : idx, 0, rec); } else L.push(rec);
+      S.settings.incomes = L.slice(0, 8);
+      if (S.settings.incomes[0]) S.settings.payday = S.settings.incomes[0].next; // older views keep working
+      payOff = 0; await save(); render(); toast(x ? 'Payday updated.' : 'Payday added.', 'Undo', undoTo(s0));
+    }, 'Save', x ? `<button type="button" class="btn danger" onclick="incomeDelete(${jsArg(x.id)})">${I('trash')} Delete</button>` : '');
+}
+async function incomeDelete(id) {
+  const s0 = snap(); S.settings.incomes = incomes().filter(i => i.id !== id);
+  S.settings.payday = S.settings.incomes[0] ? S.settings.incomes[0].next : '';
+  try { closeSheet(); } catch (e) { } payOff = 0; await save(); render(); toast('Payday deleted.', 'Undo', undoTo(s0));
+}
+// Every upcoming payday (all sources) with the unpaid bills and loan repayments due from the day before it back to the payday before.
+function upcomingPaydays(n = 4) {
+  try {
+    const T = todayT(), to = T + 75 * DAY, evs = [];
+    incomes().forEach(inc => incomeDates(inc, T, to).forEach(d => evs.push({ d, inc })));
+    evs.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+    const out = []; let prev = T;
+    for (const e of evs.slice(0, n)) {
+      const end = parseD(e.d) - DAY, items = [];
+      if (end >= prev) {
+        (S.bills || []).filter(b => b && !b.paid).forEach(b => billDates(b, prev, end).forEach(d => items.push({ name: b.name, amount: Number(b.amount) || 0, d })));
+        loanPlanInRange(prev, end).forEach(x => items.push({ name: 'Loan · ' + x.l.from, amount: x.cents / 100, d: x.d }));
+      }
+      items.sort((a, b) => a.d < b.d ? -1 : 1);
+      out.push({ ...e, items, total: items.reduce((t, x) => t + x.amount, 0) });
+      prev = Math.max(prev, parseD(e.d));
+    }
+    return out;
+  } catch (e) { return []; }
+}
+function upcomingPaydaysHtml() {
+  try {
+    const ups = upcomingPaydays(4); if (!ups.length) return '';
+    return `<div class="sec">Before each payday</div><div class="list" id="paybefore">${ups.map(u => `<div class="row paybefore"><div class="tx"><div class="t">${esc(u.inc.name)} · ${fmtW(u.d)}</div><div class="s">${u.items.length ? u.items.map(x => esc(x.name) + ' ' + money(x.amount) + ' (' + fmt(x.d) + ')').join(', ') : 'No bills due before this payday'}</div></div><b>${u.items.length ? money(u.total) : '—'}</b></div>`).join('')}</div>`;
+  } catch (e) { return ''; }
+}
+// Budget overview for a chosen period: all incomes and regular bills converted to that period.
+function budgetOverviewHtml() {
+  try {
+    const per = S.settings.budgetPeriod || 'fortnightly', word = { weekly: 'week', fortnightly: 'fortnight', monthly: 'month' }[per];
+    const inc = incomes(), incRows = inc.map(x => ({ name: x.name, freq: x.freq, v: x.amount ? payPerPeriod(x.amount, x.freq, per) : null }));
+    const bills = (S.bills || []).filter(b => b && BILL_PER_YEAR[b.repeat] && Number(b.amount) > 0).map(b => ({ name: b.name, freq: b.repeat, v: payPerPeriod(b.amount, b.repeat, per) }));
+    const loans = (S.loans || []).map(l => { try { const pl = loanPlan(l), lf = { week: 'weekly', fortnight: 'fortnightly', month: 'monthly' }[l.planFreq]; return pl && lf && l.planCents ? { name: 'Loan · ' + l.from, freq: lf, v: payPerPeriod(l.planCents / 100, lf, per) } : null; } catch (e) { return null; } }).filter(Boolean);
+    const inTot = incRows.reduce((t, x) => t + (x.v || 0), 0), outTot = [...bills, ...loans].reduce((t, x) => t + x.v, 0);
+    const missing = incRows.filter(x => x.v == null).length;
+    const chip = k => `<button type="button" class="chip${per === k ? ' on' : ''}" onclick="setBudgetPeriod('${k}')">${PAY_FREQ[k]}</button>`;
+    const r = x => `<div class="row"><div class="tx"><div class="t">${esc(x.name)}</div><div class="s">${PAY_FREQ[x.freq] || REPEATS[x.freq] || ''}</div></div><b>${x.v == null ? '—' : money(x.v)}</b></div>`;
+    return `<div class="card budgetov" id="budgetov"><div class="chips">${chip('weekly')}${chip('fortnightly')}${chip('monthly')}</div>
+      <div class="lstats"><span>Income <b>${inTot ? money(inTot) : '—'}</b></span><span>Regular bills <b>${outTot ? money(outTot) : '—'}</b></span><span>${inTot - outTot < 0 ? 'Short' : 'Left'} <b>${inTot ? money(Math.abs(inTot - outTot)) : '—'}</b></span></div>
+      <div class="sec">Pay per ${word} <button class="linkbtn" onclick="paydaysSheet()">Paydays</button></div>
+      ${incRows.length ? `<div class="list">${incRows.map(r).join('')}</div>` : `<p class="muted">No paydays yet. <button class="linkbtn" onclick="incomeForm()">Add one</button></p>`}
+      ${missing ? `<p class="muted" style="margin:6px 2px">${plural(missing, 'pay has', 'pays have')} no amount, so ${missing === 1 ? 'it isn’t' : 'they aren’t'} in the income total.</p>` : ''}
+      <div class="sec">Regular bills per ${word}</div>${bills.length || loans.length ? `<div class="list">${[...bills, ...loans].map(r).join('')}</div>` : '<p class="muted">No repeating bills yet.</p>'}
+      <p class="muted" style="margin:8px 2px 0">Converted by how often each one comes (weekly ×52, fortnightly ×26, monthly ×12 a year). One-off bills aren’t included.</p></div>`;
+  } catch (e) { return ''; }
+}
+async function setBudgetPeriod(k) { if (!PER_YEAR[k]) return; S.settings.budgetPeriod = k; await save(); render(); }
 function Bills() {
   const unpaid = S.bills.filter(b => !b.paid);
   const over = unpaid.filter(b => daysLeft(b.due) < 0).length;
@@ -288,8 +388,8 @@ function Bills() {
   let pay = '';
   const pp = showPay ? payPeriod(payOff) : null;
   if (showPay && !pp) {
-    pay = `<div class="callout green" id="paysetup">${I('cal')}<div style="flex:1"><b>Line your bills up with your pay</b><br>Set your payday and we’ll show what’s due from each payday up to the next one, including loan repayments.
-      <div style="margin-top:10px"><button class="btn small primary" onclick="paydayForm()">Set payday</button></div></div></div>`;
+    pay = `<div class="callout green" id="paysetup">${I('cal')}<div style="flex:1"><b>Line your bills up with your pay</b><br>Add your paydays (weekly, fortnightly or monthly) and we’ll show what’s due before each one, including loan repayments.
+      <div style="margin-top:10px"><button class="btn small primary" onclick="incomeForm()">Add a payday</button></div></div></div>`;
   } else if (pp) {
     payOff = pp.off;
     const sT = parseD(pp.start), eT = parseD(pp.end), items = [];
@@ -339,9 +439,10 @@ function Bills() {
         <button class="paystep" id="paynext" aria-label="Next pay" ${pp.canFwd ? '' : 'disabled'} onclick="payShift(1)">${I('right')}</button></div>
       <div class="muted">${pp.off < 0 ? 'Bills that were due' : 'To pay before the next payday'}</div><div class="amt" id="paytotal">${money(tot)}</div>
       <div class="muted">${countLabel}${late ? ` · <b style="color:var(--onbrand)">${late} overdue</b>` : ''} · next payday ${fmtW(pp.next)}</div>
-      <div class="muted billsub">${reg.length ? `Your regular bills average ${money(avg)} a fortnight. ` : ''}${hasLoanPlans ? 'Loan repayment plans are included. ' : ''}<button class="linkbtn" id="paychange" onclick="paydayForm()">Change payday</button></div></div>
+      <div class="muted billsub">${reg.length ? `Your regular bills average ${money(avg)} a fortnight. ` : ''}${hasLoanPlans ? 'Loan repayment plans are included. ' : ''}<button class="linkbtn" id="paychange" onclick="paydaysSheet()">Paydays</button></div></div>
       <div class="sec">Due ${pp.off === 0 ? 'this pay' : pp.off === 1 ? 'next pay' : pp.off === -1 ? 'last pay' : fmtW(pp.start) + ' to ' + fmtW(pp.end)}</div>
       ${items.length ? `<div class="list" id="paylist">${items.map(prow).join('')}</div>` : `<div class="card muted" id="paylist">No bills due ${pp.off < 0 ? 'in that pay' : 'in this pay'}.</div>`}
+      ${upcomingPaydaysHtml()}
       ${done.length ? `<div class="sec">Paid this pay</div><div class="list" id="paidlist">${done.sort((x, y) => x.d < y.d ? -1 : 1).map(prow).join('')}</div>` : ''}`;
   }
   const body = showPay
@@ -653,12 +754,12 @@ function Budget() {
   const list = [...(S.budgets || [])].sort((a, b) => (parseD(b.start) || 0) - (parseD(a.start) || 0));
   const sub = list.length ? 'One budget for each pay fortnight' : 'What’s left after pay day';
   const needPay = !payPeriod(0);
-  if (!list.length) return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') +
+  if (!list.length) return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') + budgetOverviewHtml() +
     (needPay ? `<div class="callout green">${I('cal')}<div style="flex:1"><b>Set your payday first</b><br>Budget uses the same fortnight as Bills.<div style="margin-top:10px"><button class="btn small primary" onclick="paydayForm()">Set payday</button></div></div></div>` : '') +
     empty('No budget yet', 'Add this fortnight’s pay. Bills and loan repayments due in that date range show at their real amounts.', 'Add', 'budgetForm()') +
     `<div class="foot">${savedWhere()}</div>`;
-  return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') +
-    `<div id="budgetlist">${list.map(budgetCard).join('')}</div>
+  return banHeader('Budget', sub, addBtn('Add a budget', 'budgetForm()'), 'budget') + budgetOverviewHtml() +
+    `<div class="sec">Pay fortnight budgets</div><div id="budgetlist">${list.map(budgetCard).join('')}</div>
     <div class="btns" style="margin-top:12px"><button class="btn" onclick="budgetForm()">${I('plus')} Add a budget</button></div>
     <div class="foot">${savedWhere()}</div>`;
 }
