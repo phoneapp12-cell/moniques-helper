@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.7.1';
+const APP_VERSION = '1.8.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -54,7 +54,8 @@ function normalise(d) {
   d.loans = normLoans(d.loans);
   d.budgets = normBudgets(d.budgets);
   d.appts = normAppts(d.appts);
-  d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: '' }));
+  d.shop = (Array.isArray(d.shop) ? d.shop : []).filter(x => x && typeof x === 'object' && x.id && x.name).map(x => ({ id: String(x.id), name: String(x.name).slice(0, 80), qty: String(x.qty || '').slice(0, 20), done: !!x.done, from: '', pr: cleanPr(x.pr), prNone: Number(x.prNone) || 0 }));
+  d.shopPast = (Array.isArray(d.shopPast) ? d.shopPast : []).map(v => String(v || '').slice(0, 80)).filter(Boolean).slice(0, 150);
   const st = d.settings && typeof d.settings === 'object' ? d.settings : {};
   d.settings = { payday: st.payday || '', notify: !!st.notify, seen: Array.isArray(st.seen) ? st.seen.map(String).slice(-200) : [] };
   d.version = 1;
@@ -95,15 +96,55 @@ function banHeader(title, sub, extra, k) {
   } catch (e) { return header(title, sub, extra); }
 }
 
+/* 1.8.0: suggestions while typing (common NZ grocery items + her own past items) and real Woolworths NZ prices
+   through the relay (cached there with the Cache API). Only the item name is sent. No price found = no price shown. */
+const PRICE_URL = 'https://due-dates-calendar-relay.phoneapp12.workers.dev/mh-prices';
+const NZ_GROCERY = ['Milk','Trim milk','Bread','Gluten free bread','Butter','Margarine','Eggs','Cheese','Tasty cheese','Edam cheese','Yoghurt','Greek yoghurt','Cream','Sour cream','Bananas','Apples','Oranges','Mandarins','Kiwifruit','Lemons','Avocados','Grapes','Strawberries','Blueberries','Pears','Potatoes','Kumara','Onions','Garlic','Carrots','Broccoli','Cauliflower','Cabbage','Lettuce','Tomatoes','Cucumber','Capsicum','Mushrooms','Pumpkin','Courgettes','Spinach','Silverbeet','Corn','Peas','Frozen peas','Frozen mixed vegetables','Chicken breast','Chicken thighs','Whole chicken','Beef mince','Steak','Sausages','Lamb chops','Pork chops','Bacon','Ham','Salami','Fish fillets','Tuna','Salmon','Rice','Pasta','Spaghetti','Noodles','Flour','Sugar','Brown sugar','Salt','Pepper','Olive oil','Canola oil','Tomato sauce','Mayonnaise','Soy sauce','Peanut butter','Jam','Honey','Marmite','Vegemite','Weet-Bix','Cornflakes','Rolled oats','Muesli','Coffee','Instant coffee','Tea bags','Milo','Hot chocolate','Orange juice','Apple juice','Soft drink','Lemonade','Sparkling water','Baked beans','Spaghetti in a can','Canned tomatoes','Coconut cream','Chickpeas','Soup','Stock cubes','Gravy','Crackers','Biscuits','Chips','Chocolate','Lollies','Muesli bars','Ice cream','Frozen pizza','Fish fingers','Hash browns','Toilet paper','Paper towels','Tissues','Dishwashing liquid','Dishwasher tablets','Laundry powder','Laundry liquid','Fabric softener','Bleach','Spray cleaner','Rubbish bags','Cling wrap','Tin foil','Baking paper','Shampoo','Conditioner','Soap','Body wash','Toothpaste','Toothbrush','Deodorant','Razors','Sunscreen','Nappies','Baby wipes','Dog food','Cat food','Cat litter','Batteries','Light bulbs'];
+function cleanPr(p) {
+  if (!p || typeof p !== 'object' || !(Number(p.price) > 0)) return null;
+  return { price: Math.round(Number(p.price) * 100) / 100, name: String(p.name || '').slice(0, 80), size: String(p.size || '').slice(0, 20), per: p.per === 'kg' ? 'kg' : '', special: !!p.special, checked: String(p.checked || '').slice(0, 30), url: /^https:\/\/www\.woolworths\.co\.nz\//.test(String(p.url || '')) ? String(p.url).slice(0, 300) : '' };
+}
+function shopSuggestions() {
+  try { const seen = new Set(), out = []; [...(S.shopPast || []), ...NZ_GROCERY].forEach(n => { const k = n.toLowerCase(); if (!seen.has(k)) { seen.add(k); out.push(n); } }); return out; } catch (e) { return NZ_GROCERY; }
+}
+const prTitle = s => String(s || '').replace(/\b\w/g, c => c.toUpperCase());
+let shopPriceBusy = false;
+async function shopPriceFill() {
+  if (shopPriceBusy || !S || !navigator.onLine) return;
+  const now = Date.now(), want = S.shop.filter(x => !x.done && (!x.pr || now - Date.parse(x.pr.checked || 0) > 20 * 3600000) && !(x.prNone && now - x.prNone < 20 * 3600000)).slice(0, 8);
+  if (!want.length) return;
+  shopPriceBusy = true;
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 15000);
+    const r = await fetch(PRICE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items: want.map(x => ({ q: x.name })) }), signal: ctl.signal });
+    clearTimeout(t); if (!r.ok) return;
+    const d = await r.json(); let changed = false;
+    (d.items || []).forEach((res, i) => { const x = want[i]; if (!x || !res || res.pending || res.error) return; const p = res.product ? cleanPr({ ...res.product, checked: res.checked }) : null; if (p) { x.pr = p; delete x.prNone; } else { x.pr = null; x.prNone = now; } changed = true; });
+    if (changed) { await save(); if ((location.hash || '') === '#shopping') render(); }
+  } catch (e) { } finally { shopPriceBusy = false; }
+}
+function shopPriceHtml(x) {
+  try { const p = x.pr; if (!p) return ''; return `<div class="s shoppr">≈ ${money(p.price)}${p.per ? '/kg' : ''}${p.special ? ' <span class="shopspec">special</span>' : ''} · ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(prTitle(p.name))}${p.size ? ' ' + esc(p.size) : ''}</a>` : esc(prTitle(p.name))}</div>`; } catch (e) { return ''; }
+}
+function shopTotalHtml(left) {
+  try {
+    const priced = left.filter(x => x.pr); if (!priced.length) return '';
+    const tot = priced.reduce((a, x) => a + x.pr.price * (parseFloat(x.qty) > 0 && !x.pr.per ? parseFloat(x.qty) : 1), 0);
+    const last = priced.map(x => x.pr.checked).sort().pop();
+    return `<div class="card shoptot"><div><b>Estimated total ${money(tot)}</b><div class="s">${priced.length} of ${left.length} items priced · Woolworths NZ online prices${last ? ', checked ' + fmtW(last.slice(0, 10)) : ''}. Your store may differ; per-kg items count as 1 kg.</div></div></div>`;
+  } catch (e) { return ''; }
+}
+
 /* 1.7.0: simple shopping list, kept on this phone only. */
 function Shopping() {
+  setTimeout(() => { try { shopPriceFill(); } catch (e) { } }, 300);
   const left = S.shop.filter(x => !x.done), got = S.shop.filter(x => x.done);
-  const row = x => `<div class="row shoprow${x.done ? ' done' : ''}"><button class="shoptick${x.done ? ' on' : ''}" aria-label="${x.done ? 'Not got' : 'Got'} ${esc(x.name)}" onclick="shopTick('${x.id}')">${x.done ? I('check') : ''}</button><div class="tx"><div class="t">${esc(x.name)}${x.qty ? ` <span class="shopqty">${esc(x.qty)}</span>` : ''}</div></div><button class="iconbtn small" aria-label="Delete ${esc(x.name)}" onclick="shopDel('${x.id}')">${I('trash')}</button></div>`;
+  const row = x => `<div class="row shoprow${x.done ? ' done' : ''}"><button class="shoptick${x.done ? ' on' : ''}" aria-label="${x.done ? 'Not got' : 'Got'} ${esc(x.name)}" onclick="shopTick('${x.id}')">${x.done ? I('check') : ''}</button><div class="tx"><div class="t">${esc(x.name)}${x.qty ? ` <span class="shopqty">${esc(x.qty)}</span>` : ''}</div>${x.done ? '' : shopPriceHtml(x)}</div><button class="iconbtn small" aria-label="Delete ${esc(x.name)}" onclick="shopDel('${x.id}')">${I('trash')}</button></div>`;
   return banHeader('Shopping', left.length ? plural(left.length, 'thing') + ' to get' : 'Nothing to get', '', 'shopping') +
-    `<form class="shopadd" onsubmit="event.preventDefault();shopAdd()"><input id="shopin" type="text" maxlength="80" placeholder="Add something…" autocomplete="off" aria-label="Add to shopping list"><button class="btn primary" type="submit" aria-label="Add">${I('plus')}</button></form>` +
-    (S.shop.length ? `<div class="card list">${left.map(row).join('')}${got.length ? `<div class="shopgot">Got (${got.length}) <button class="linkbtn" onclick="shopClear()">Clear</button></div>` + got.map(row).join('') : ''}</div>` : empty('Your shopping list is empty', 'Type above to add something.'));
+    `<form class="shopadd" onsubmit="event.preventDefault();shopAdd()"><input id="shopin" type="text" maxlength="80" placeholder="Add something…" autocomplete="off" list="shopsug" aria-label="Add to shopping list"><datalist id="shopsug">${shopSuggestions().map(n => `<option value="${esc(n)}">`).join('')}</datalist><button class="btn primary" type="submit" aria-label="Add">${I('plus')}</button></form>` +
+    shopTotalHtml(left) + (S.shop.length ? `<div class="card list">${left.map(row).join('')}${got.length ? `<div class="shopgot">Got (${got.length}) <button class="linkbtn" onclick="shopClear()">Clear</button></div>` + got.map(row).join('') : ''}</div>` : empty('Your shopping list is empty', 'Type above to add something.'));
 }
-async function shopAdd() { const el = $('#shopin'); const v = el && el.value.trim(); if (!v) return; S.shop.unshift({ id: uid('s'), name: v.slice(0, 80), qty: '', done: false, from: '' }); await save(); render(); setTimeout(() => { const e = $('#shopin'); if (e) e.focus(); }, 30); }
+async function shopAdd() { const el = $('#shopin'); const v = el && el.value.trim(); if (!v) return; S.shop.unshift({ id: uid('s'), name: v.slice(0, 80), qty: '', done: false, from: '', pr: null }); S.shopPast = [v.slice(0, 80), ...(S.shopPast || []).filter(n => n.toLowerCase() !== v.toLowerCase())].slice(0, 150); await save(); render(); setTimeout(() => { const e = $('#shopin'); if (e) e.focus(); }, 30); }
 async function shopTick(id) { const x = S.shop.find(y => y.id === id); if (!x) return; x.done = !x.done; await save(); render(); }
 async function shopDel(id) { const s0 = snap(), x = S.shop.find(y => y.id === id); S.shop = S.shop.filter(y => y.id !== id); await save(); render(); if (x) toast('Deleted ' + x.name, 'Undo', undoTo(s0)); }
 async function shopClear() { const s0 = snap(); S.shop = S.shop.filter(y => !y.done); await save(); render(); toast('Cleared ticked items', 'Undo', undoTo(s0)); }
