@@ -244,6 +244,12 @@ html[data-theme="dark"] .ic.note{background:#1E3A5F;color:#BFDBFE}
 #view{padding-bottom:calc(84px + var(--sab))}
 #mhtabs{position:absolute;left:0;right:0;bottom:0;z-index:30;display:flex;justify-content:space-around;background:var(--tabbg);border-top:1px solid var(--line);padding:6px calc(6px + var(--sar)) calc(6px + var(--sab)) calc(6px + var(--sal));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
 #mhtabs button{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;font:inherit;font-size:0.75rem;font-weight:650;color:var(--ink3);padding:6px 2px;border-radius:12px;cursor:pointer}
+#helppanel{position:fixed;inset:0;z-index:60;background:var(--bg,#fff);transform:translateX(100%);overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y;box-shadow:-8px 0 24px rgba(0,0,0,.12);padding:0 14px calc(24px + env(safe-area-inset-bottom))}
+.helpbar{position:sticky;top:0;z-index:2;background:var(--bg,#fff);padding:calc(10px + env(safe-area-inset-top)) 0 8px}
+.helpback{display:inline-flex;align-items:center;gap:6px;border:0;background:var(--brand2,#eef);color:var(--brand,#335);font:inherit;font-weight:700;border-radius:99px;padding:8px 14px}
+.helpback svg.i{width:18px;height:18px}
+#helphint{position:fixed;right:0;top:46%;z-index:55;background:var(--brand,#335);color:#fff;font-weight:650;font-size:.85rem;padding:9px 14px 9px 12px;border-radius:14px 0 0 14px;opacity:.92;box-shadow:0 4px 14px rgba(0,0,0,.15);transition:opacity .5s}
+#helphint.gone{opacity:0}
 #mhtabs button svg.i{width:22px;height:22px}
 #mhtabs button.on{color:var(--brand);background:var(--brand2)}
 #toast{bottom:calc(90px + var(--sab))}

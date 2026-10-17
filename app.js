@@ -1,7 +1,7 @@
 /* Monique's Helper – Bills, Budget and Loans. Everything is saved on this phone only (localStorage). Nothing is sent anywhere. */
 'use strict';
 const { DAY, todayT, todayISO, parseD, isoT, daysLeft, addDays, addMonths, fmt, fmtY, fmtW, fmtLong, money, REPEATS, nextDue, billDates, repeatDates, status, centsMoney, parseCents } = MH;
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 const STORE_KEY = 'moniquesHelper.data.v1';
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -277,6 +277,7 @@ function closeSheet() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheetOpen) closeSheet(); });
 window.addEventListener('popstate', () => {
+  if (helpIsOpen) { helpClose(true); return; }
   if (sheetResolve) { const r = sheetResolve; sheetResolve = null; r(); return; }
   if (sheetOpen) hideSheet();
 });
@@ -1769,13 +1770,13 @@ function Help() {
 }
 
 /* ================= ROUTER ================= */
-const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['shopping', 'Shopping', 'cart'], ['loans', 'Loans', 'coins'], ['tarot', 'Tarot', 'tarot'], ['help', 'Help', 'heart'], ['backup', 'Backup', 'gear']];
+const TABS = [['bills', 'Bills', 'bill'], ['calendar', 'Calendar', 'cal'], ['budget', 'Budget', 'cash'], ['shopping', 'Shopping', 'cart'], ['loans', 'Loans', 'coins'], ['tarot', 'Tarot', 'tarot'], ['backup', 'Backup', 'gear']];
 function render() {
   if (!S) return;
   const h = (location.hash || '#bills').slice(1), [r, arg] = h.split('/');
   let page = '';
   try {
-    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? Help() : r === 'shopping' ? Shopping() : r === 'tarot' ? Tarot(arg) : Bills();
+    page = r === 'loan' ? LoanDetail(arg) : r === 'budget' ? Budget() : r === 'loans' ? Loans() : r === 'backup' ? Backup() : r === 'calendar' ? Calendar() : r === 'help' ? (setTimeout(() => { history.replaceState(null, '', '#bills'); helpOpen(); }, 0), Bills()) : r === 'shopping' ? Shopping() : r === 'tarot' ? Tarot(arg) : Bills();
   } catch (e) { console.error(e); page = `<div class="card">Sorry, this page couldn’t load. <button class="btn small" onclick="location.reload()">Reload</button></div>`; }
   $('#view').innerHTML = greetCard() + remindBanner() + (r === 'bills' || r === '' ? installCard() + todayCard() + tarotTeaser() : '') + page;
   const active = r === 'loan' ? 'loans' : TABS.some(t => t[0] === r) ? r : 'bills';
@@ -1784,7 +1785,51 @@ function render() {
 window.addEventListener('hashchange', () => { if (!sheetOpen) { render(); $('#view').scrollTop = 0; window.scrollTo(0, 0); } });
 let renderedDay = todayISO();
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && todayISO() !== renderedDay && !sheetOpen) { renderedDay = todayISO(); render(); } });
+/* ================= HELP PANEL (1.11.0): swipe left across the screen to slide Help in; swipe right or tap back to close ================= */
+let helpIsOpen = false;
+function helpPanel() { let el = document.getElementById('helppanel'); if (!el) { el = document.createElement('aside'); el.id = 'helppanel'; el.setAttribute('aria-label', 'Help'); el.setAttribute('aria-hidden', 'true'); document.body.appendChild(el); } return el; }
+function helpFill() { const el = helpPanel(); el.innerHTML = `<div class="helpbar"><button type="button" class="helpback" onclick="helpClose()" aria-label="Close help">${I('left')} Back</button></div><div class="helpbody">${Help()}</div>`; }
+function helpSet(x, anim) { const el = helpPanel(); el.style.transition = anim ? 'transform .28s ease' : 'none'; el.style.transform = `translateX(${x}px)`; }
+function helpOpen() { helpFill(); const el = helpPanel(); helpSet(0, true); el.setAttribute('aria-hidden', 'false'); document.documentElement.classList.add('helpon'); if (!helpIsOpen) { helpIsOpen = true; history.pushState({ help: true }, '', location.href); } try { localStorage.setItem('moniquesHelper.helpHint', '1'); } catch (e) { } const h = document.getElementById('helphint'); if (h) h.remove(); }
+function helpClose(fromPop) { const el = helpPanel(); helpSet(el.offsetWidth || innerWidth, true); el.setAttribute('aria-hidden', 'true'); document.documentElement.classList.remove('helpon'); const was = helpIsOpen; helpIsOpen = false; if (was && !fromPop) history.back(); }
+// Only a clearly horizontal swipe counts, and never on things with their own sideways movement (scrollable rows, sliders, inputs, sheets).
+function ownSwipe(t) {
+  for (let e = t; e && e !== document.body; e = e.parentElement) {
+    if (e.matches && e.matches('input,textarea,select,[data-noswipe],#sheet,#mhtabs,.swipe,.carousel')) return true;
+    const cs = getComputedStyle(e); if ((cs.overflowX === 'auto' || cs.overflowX === 'scroll') && e.scrollWidth > e.clientWidth + 2) return true;
+  }
+  return false;
+}
+(function () {
+  let x0 = 0, y0 = 0, t0 = 0, mode = '', dx = 0, from = '';
+  document.addEventListener('touchstart', e => {
+    mode = ''; dx = 0; if (e.touches.length !== 1 || sheetOpen) { from = ''; return; }
+    const t = e.touches[0]; x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+    if (helpIsOpen) from = 'panel'; else from = ownSwipe(e.target) ? '' : 'view';
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
+    if (!from) return; const t = e.touches[0], mx = t.clientX - x0, my = t.clientY - y0;
+    if (!mode) { if (Math.abs(mx) < 14 && Math.abs(my) < 14) return; mode = Math.abs(mx) > 2 * Math.abs(my) && (from === 'view' ? mx < 0 : mx > 0) ? 'x' : 'no'; }
+    if (mode !== 'x') return;
+    e.preventDefault(); const w = helpPanel().offsetWidth || innerWidth;
+    if (from === 'view') { if (!helpPanel().innerHTML) helpFill(); dx = Math.min(0, mx); helpSet(w + dx, false); }
+    else { dx = Math.max(0, mx); helpSet(dx, false); }
+  }, { passive: false });
+  document.addEventListener('touchend', () => {
+    if (mode !== 'x') { mode = ''; return; }
+    const w = helpPanel().offsetWidth || innerWidth, fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;
+    if (from === 'view') { if (-dx > w * 0.3 || (fast && -dx > 40)) helpOpen(); else helpSet(w, true); }
+    else { if (dx > w * 0.3 || (fast && dx > 40)) helpClose(); else helpSet(0, true); }
+    mode = '';
+  });
+})();
+function helpHint() {
+  try { if (localStorage.getItem('moniquesHelper.helpHint')) return; } catch (e) { return; }
+  setTimeout(() => { if (helpIsOpen || document.getElementById('helphint')) return; const d = document.createElement('div'); d.id = 'helphint'; d.innerHTML = '‹ Swipe left for help'; d.onclick = helpOpen; document.body.appendChild(d);
+    setTimeout(() => { d.classList.add('gone'); setTimeout(() => d.remove(), 600); try { localStorage.setItem('moniquesHelper.helpHint', '1'); } catch (e) { } }, 7000); }, 2800);
+}
 load();
 render();
+helpHint();
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => { });
 try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { }
